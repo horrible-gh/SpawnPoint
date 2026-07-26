@@ -1,0 +1,4 @@
+{
+  "upsert": "spawn_daily_seq_upsert.sql",
+  "select_last_seq": "spawn_daily_seq_select.sql"
+}
