@@ -1,14 +1,14 @@
-"""최상위 처리 — L-0006 §2.1 spawn().
+"""Top-level handler — L-0006 §2.1 spawn().
 
-D-0004의 판단 흐름(Intake→Validator→Allocator→Registrar→Responder)을 조립한다.
-전송 계층에 독립적인 순수 함수로 구현하여 테스트가 직접 호출할 수 있게 한다.
+Assembles the decision flow (Intake→Validator→Allocator→Registrar→Responder) from D-0004.
+Implemented as a pure function independent of the transport layer, so tests can call it directly.
 
-request 딕셔너리 형태(P-0005 + 전송 계층이 주입하는 token):
+request dictionary format (P-0005 + transport-layer-injected token):
     {
-      "token": "<bearer 토큰 또는 None>",
+      "token": "<bearer token or None>",
       "requester": "...",
       "kind": "session|worker|task",
-      "request_key": "...",          # 선택
+      "request_key": "...",          # optional
       "options": {"label": "...", "ttl_seconds": 3600}
     }
 """
@@ -28,7 +28,7 @@ from .validator import validate_request
 
 def _resolve_ttl(options: dict) -> int:
     ttl = options.get("ttl_seconds")
-    # 검증을 이미 통과했으므로 정수면 범위 내 값이다. 미지정이면 기본값.
+    # Validation already passed, so if it's an int, it's within range. If unset, use default.
     if isinstance(ttl, int) and not isinstance(ttl, bool):
         return ttl
     return params.TTL_DEFAULT
@@ -59,11 +59,11 @@ def spawn(
     registry: Registry,
     auth: AuthValidator,
 ) -> dict:
-    # 1. 인증
+    # 1. Authentication
     if not auth.check(request.get("token")):
-        return error("unauthorized", None, "유효한 인증 토큰이 필요합니다.")
+        return error("unauthorized", None, "Valid authentication token required.")
 
-    # 2. 유효성 검증
+    # 2. Validation
     v = validate_request(request)
     if not v.ok:
         return error("invalid_request", v.field, v.message)
@@ -71,24 +71,24 @@ def spawn(
     dedup_window = params.DEDUP_WINDOW_SECONDS
     request_key = request.get("request_key")
 
-    # 3. 중복 요청 사전 판정 (멱등 처리)
+    # 3. Duplicate request early detection (idempotent handling)
     if request_key is not None:
         existing = registry.find_active_by_key(request_key, now, dedup_window)
         if existing is not None:
             return ok_instance(existing, deduplicated=True)
 
-    # 4. 식별자 발급 → 인스턴스 구성 → 등록
+    # 4. Allocate ID → construct instance → register
     ident = allocate_id(now, registry)
     ttl = _resolve_ttl(request.get("options") or {})
     instance = build_instance(ident, request, ttl, now)
 
     written = registry.insert(instance)
     if not written.ok:
-        # 식별자 충돌 → 동일 key 재조회 후 있으면 기존 반환 (L-0006 §2.1 재시도 경로)
+        # ID collision → retry key lookup → return existing if found (L-0006 §2.1 retry path)
         if written.reason == "duplicate_key" and request_key is not None:
             existing = registry.find_active_by_key(request_key, now, dedup_window)
             if existing is not None:
                 return ok_instance(existing, deduplicated=True)
-        return error("storage_error", None, "인스턴스 저장에 실패했습니다.")
+        return error("storage_error", None, "Failed to save instance.")
 
     return ok_instance(instance, deduplicated=False)

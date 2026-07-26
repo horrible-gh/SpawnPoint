@@ -1,6 +1,6 @@
-"""시안(dx0qx6f7) 정적 페이지 로더.
+"""Mockup (dx0qx6f7) static page loader.
 
-`static/index.html` 을 그대로 읽어 바이트로 캐시해 둔다. 표준 라이브러리만 쓴다.
+Read `static/index.html` and cache it as bytes. Uses only the standard library.
 """
 from __future__ import annotations
 

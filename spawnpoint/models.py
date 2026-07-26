@@ -1,4 +1,4 @@
-"""도메인 모델 (D-0004 §5 출력 핸들, DB-0007 §2.1 spawn_instance)."""
+"""Domain model (D-0004 §5 output handle, DB-0007 §2.1 spawn_instance)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,7 +9,7 @@ from .clock import KST
 
 @dataclass(frozen=True)
 class SpawnInstance:
-    """생성된 인스턴스 1건. spawn_instance 테이블 1행에 대응한다."""
+    """One instance created. Corresponds to one row in spawn_instance table."""
 
     id: str
     requester: str
@@ -22,7 +22,7 @@ class SpawnInstance:
     expires_at: datetime
 
     def to_public(self) -> dict:
-        """호출자에게 돌려줄 핸들 (프로토콜 P-0005 응답의 instance 블록)."""
+        """Handle to return to caller (instance block in P-0005 response)."""
         return {
             "id": self.id,
             "status": self.status,

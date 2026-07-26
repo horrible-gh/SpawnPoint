@@ -1,22 +1,30 @@
-"""응답 구성부(Responder) — 프로토콜 P-0005 응답 형태를 만든다."""
-from __future__ import annotations
+"""Response builder (P-0005 response format)."""
 
-from .models import SpawnInstance
+from . import models
 
 
-def ok_instance(inst: SpawnInstance, deduplicated: bool = False) -> dict:
-    """성공 응답. 중복 처리로 기존 인스턴스를 반환할 때만 deduplicated=true를 싣는다."""
-    resp: dict = {"ok": True}
+def ok_instance(instance: models.SpawnInstance, deduplicated: bool = False) -> dict:
+    """Success response: instance created (or retrieved if deduplicated)."""
+    body = {
+        "ok": True,
+        "instance": {
+            "id": instance.id,
+            "status": instance.status,
+            "kind": instance.kind,
+            "requester": instance.requester,
+            "created_at": instance.created_at.isoformat(),
+        },
+    }
     if deduplicated:
-        resp["deduplicated"] = True
-    resp["instance"] = inst.to_public()
-    return resp
+        body["deduplicated"] = True
+    if instance.label:
+        body["instance"]["label"] = instance.label
+    return body
 
 
 def error(code: str, field: str | None, message: str) -> dict:
-    """거부 응답. field는 invalid_request에서 위반 필드를 가리킬 때만 포함한다."""
-    err: dict = {"code": code}
+    """Error response."""
+    body = {"ok": False, "error": {"code": code, "message": message}}
     if field is not None:
-        err["field"] = field
-    err["message"] = message
-    return {"ok": False, "error": err}
+        body["error"]["field"] = field
+    return body

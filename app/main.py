@@ -1,15 +1,15 @@
-"""SpawnPoint 애플리케이션 진입점.
+"""SpawnPoint application entry point.
 
-환경변수로 설정을 읽어 저장소·인증을 구성하고 서버를 기동한다. 하나의
-프로세스·하나의 포트에서 API(POST /spawn)와 화면(GET /)을 함께 서빙한다.
+Read environment settings to configure storage and authentication, then start server.
+Serves API (POST /spawn), UI (GET /), and process runner on one process, one port.
 
-환경변수:
-    SPAWNPOINT_HOST        기본 127.0.0.1
-    SPAWNPOINT_PORT        기본 8091
-    SPAWNPOINT_DB_PATH     기본 spawnpoint.db (SQLite 파일 경로)
-    SPAWNPOINT_LOG_DIR     기본 logs (실행기가 관리하는 프로세스의 로그 디렉토리)
-    SPAWNPOINT_API_TOKENS  쉼표로 구분한 허용 Bearer 토큰 목록.
-                           미설정 시 인증 비활성화(기본 로컬 실행).
+Environment variables:
+    SPAWNPOINT_HOST        Default: 127.0.0.1
+    SPAWNPOINT_PORT        Default: 8091
+    SPAWNPOINT_DB_PATH     Default: spawnpoint.db (SQLite file path)
+    SPAWNPOINT_LOG_DIR     Default: logs (log directory for runner-managed processes)
+    SPAWNPOINT_API_TOKENS  Comma-separated list of allowed Bearer tokens.
+                           If unset, authentication is disabled (default local mode).
 """
 from __future__ import annotations
 
@@ -41,8 +41,8 @@ def build() -> tuple[Registry, AuthValidator, ProcessManager, str, int]:
 
 
 def main() -> None:
-    # Windows 기본 콘솔(cp949/cp932)은 한글 기동 메시지를 인코딩하지 못해
-    # 시작하자마자 UnicodeEncodeError로 죽는다. 가능하면 UTF-8로 전환한다.
+    # Windows default console (cp949/cp932) cannot encode startup messages with
+    # non-ASCII characters, causing UnicodeEncodeError at start. Switch to UTF-8 if possible.
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError):
@@ -52,11 +52,11 @@ def main() -> None:
     server = make_server(
         host, port, registry, auth, index_html=INDEX_HTML, procman=procman
     )
-    mode = "토큰 검증" if auth.enabled else "없음(로컬 기본값)"
+    mode = "token validation" if auth.enabled else "disabled (local default)"
     print(f"SpawnPoint listening on http://{host}:{port}  [auth: {mode}]")
-    print(f"  화면(UI):  http://{host}:{port}/")
-    print(f"  API:       POST http://{host}:{port}/spawn")
-    print(f"  실행기:    http://{host}:{port}/processes")
+    print(f"  UI:     http://{host}:{port}/")
+    print(f"  API:    POST http://{host}:{port}/spawn")
+    print(f"  Runner: http://{host}:{port}/processes")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
