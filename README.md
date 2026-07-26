@@ -4,9 +4,6 @@ A **entry point** module that creates (spawns) new task instances. It receives e
 requests to create new instances, validates them, registers qualified requests with unique
 identifiers, and returns handles (identifiers + status) to callers.
 
-Design document chain: D-0004 (architecture) → P-0005 (protocol) → L-0006 (logic) → DB-0007 (database).
-This implementation translates the rules finalized in those four documents into code.
-
 ## Structure
 
 ```
@@ -16,18 +13,18 @@ runnerview/
   static/index.html  Runner UI (dynamic screen connected to actual /processes* API)
   page.py            Static screen loader
 spawnpoint/
-  params.py          Parameters (L-0006 §1)
+  params.py          Parameters
   clock.py           Time/timezone utility (display=KST, storage/comparison=fixed-width UTC ISO)
-  models.py          SpawnInstance model (DB-0007 §2.1)
+  models.py          SpawnInstance model
   storage.py         Registry — SQLite-backed store using sqloader, insert/query/seq
   sql/
     sqlite/            sqloader query files (spawn_instance.json / spawn_daily_seq.json + .sql)
-    migration/sqlite/  sqloader migration files (DB-0007 §2 DDL)
-  validator.py       Validation layer (L-0006 §2.2)
-  allocator.py       ID allocator (L-0006 §2.3)
+    migration/sqlite/  sqloader migration files (DDL)
+  validator.py       Validation layer
+  allocator.py       ID allocator
   auth.py            Bearer token validator
-  results.py         Response builder (P-0005 response format)
-  service.py         Top-level handler spawn() (L-0006 §2.1)
+  results.py         Response builder
+  service.py         Top-level handler spawn()
   runner.py          Runner (ProcessManager) — actual OS subprocess run/stop/restart/list/logging
   http_api.py        HTTP adapter (POST /spawn + screen serving + /processes* runner routes)
 tests/
@@ -41,7 +38,7 @@ tests/
 The API server and UI run on **one process, one port**. `app/main.py` injects the static
 UI HTML from `runnerview` into `spawnpoint.http_api` to serve it on `GET /`.
 
-Component flow (D-0004 §2): `Intake → Validator → Allocator → Registrar → Responder`.
+Component flow: `Intake → Validator → Allocator → Registrar → Responder`.
 
 ## Endpoints
 
@@ -139,9 +136,9 @@ Install: `pip install -r requirements.txt`
 
 ## Out of Scope (Deferred by Design)
 
-- State transitions after `created` (active/expired): instance lifecycle management module (L-0006 §3)
-- Physical DB engine choice, retention/deletion policy for expired instances (DB-0007 [DEFERRED])
-- This implementation's reference storage is SQLite; schema, constraints, indices follow DB-0007 exactly.
+- State transitions after `created` (active/expired): instance lifecycle management module
+- Physical DB engine choice, retention/deletion policy for expired instances (deferred)
+- This implementation's reference storage is SQLite.
 
 ## Runner (Process Runner) UI
 
@@ -152,8 +149,8 @@ panel polls `logs/<id>.log` every 1 second. Default local mode enables all featu
 separate token input needed.
 
 Arbitrary OS command run/stop/restart/list, log tail, POSIX killpg / Windows taskkill /T are
-a separate domain from spawn instance registration (above). No higher-level design documents (D/P/L/DB chain)
-exist yet — `runner.py` operates independently from that chain.
+a separate domain from spawn instance registration (above); `runner.py` operates independently
+from it.
 
 > Note: Previously this screen was a separate app (`app/runner_main.py`, port 8092),
 > but there was no reason to run two processes, so it was integrated into the main server (`app/main.py`).

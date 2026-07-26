@@ -1,4 +1,4 @@
-"""Parameters and limits (L-0006 §1)."""
+"""Parameters and limits."""
 
 REQUESTER_MAX_LEN = 64
 KIND_MAX_LEN = 32

@@ -1,4 +1,4 @@
-"""HTTP adapter — endpoint POST /spawn (protocol P-0005) + operational auxiliary routes.
+"""HTTP adapter — endpoint POST /spawn + operational auxiliary routes.
 
 Uses only the standard library (http.server). Core logic is isolated as a pure function in
 handle_spawn(), so tests can call it directly without sockets.
@@ -8,7 +8,7 @@ same port. Inject HTML bytes via make_server(..., index_html=...) and GET / , GE
 will serve that screen (omit it and those routes also return 404).
 
 Routes:
-    POST /spawn                    Instance creation (P-0005)
+    POST /spawn                    Instance creation
     GET  / , /index.html           Screen (if index_html injected)
     GET  /healthz                  Liveness check
     GET  /processes                Runner: process list

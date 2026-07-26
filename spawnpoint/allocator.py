@@ -1,4 +1,4 @@
-"""ID allocator (L-0006 §2.3)."""
+"""ID allocator."""
 
 from __future__ import annotations
 

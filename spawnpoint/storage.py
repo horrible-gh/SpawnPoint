@@ -1,10 +1,10 @@
-"""Instance storage (DB-0007).
+"""Instance storage.
 
 Registry backed by SQLite, responsible for instance registration (Registrar) + ID sequence allocation.
-DB-0007 tables, constraints, indexes are in migration files (spawnpoint/sql/migration/sqlite);
+Tables, constraints, indexes are in migration files (spawnpoint/sql/migration/sqlite);
 queries are in sqloader query files (spawnpoint/sql/sqlite), separate from code.
 
-D-0004 component mapping:
+Component mapping:
 - registry.insert(...)             → Instance Registrar write
 - registry.find_active_by_key(...) → Duplicate request detection read
 - registry.next_daily_seq(...)     → Allocator support (atomic sequence)
@@ -50,7 +50,7 @@ class Registry:
     def __init__(self, db_path: str):
         self._db = SQLiteWrapper(db_name=db_path)
         self._sq = SQLoader(_SQL_DIR, db_type=self._db.db_type, db=self._db)
-        # auto_run=True: immediately apply unapplied migrations (DB-0007 §2 DDL)
+        # auto_run=True: immediately apply unapplied migrations (DDL)
         self._migrator = DatabaseMigrator(self._db, _MIGRATION_DIR, auto_run=True)
 
     @classmethod
@@ -60,7 +60,7 @@ class Registry:
     def close(self) -> None:
         self._db.close()
 
-    # --- ID sequence allocation (L-0006 §2.3, DB-0007 §2.2) ----------
+    # --- ID sequence allocation ----------
 
     def next_seq(self, date_part: str) -> int:
         """Atomically increment the sequence for this date and return new value.
@@ -79,7 +79,7 @@ class Registry:
             row = txn.fetch_one(select_sql, (date_part,))
         return int(row["last_seq"])
 
-    # --- Instance registration (L-0006 §2.1) ----
+    # --- Instance registration ----
 
     def insert(self, inst: SpawnInstance) -> WriteResult:
         """Save new instance. Report duplicate_key on ID collision."""
@@ -108,14 +108,14 @@ class Registry:
         except sqlite3.Error:
             return WriteResult(False, "error")
 
-    # --- Duplicate detection query (L-0006 §2.4) ---
+    # --- Duplicate detection query ---
 
     def find_active_by_key(
         self, request_key: str | None, now: datetime, dedup_window: int
     ) -> SpawnInstance | None:
         """Fetch the latest instance with same request_key where created_at > (now - dedup_window).
 
-        Lower bound is open interval (boundary excluded) per L-0006 §5 'time window boundary' rule.
+        Lower bound is open interval (boundary excluded) per the 'time window boundary' rule.
         Comparison uses '>' (strict).
         """
         if request_key is None:

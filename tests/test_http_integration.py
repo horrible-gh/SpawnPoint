@@ -1,7 +1,7 @@
 """엔드투엔드 HTTP 통합 테스트.
 
 실제 ThreadingHTTPServer 를 임시 포트로 기동하고 urllib 로 요청을 보내
-프로토콜 P-0005 시나리오와 운영 라우트(healthz/405/413/404)를 검증한다.
+spawn 프로토콜 시나리오와 운영 라우트(healthz/405/413/404)를 검증한다.
 """
 from __future__ import annotations
 

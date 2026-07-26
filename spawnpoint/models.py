@@ -1,4 +1,4 @@
-"""Domain model (D-0004 §5 output handle, DB-0007 §2.1 spawn_instance)."""
+"""Domain model (SpawnInstance / spawn_instance table)."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,7 +22,7 @@ class SpawnInstance:
     expires_at: datetime
 
     def to_public(self) -> dict:
-        """Handle to return to caller (instance block in P-0005 response)."""
+        """Handle to return to caller (instance block in the spawn response)."""
         return {
             "id": self.id,
             "status": self.status,
