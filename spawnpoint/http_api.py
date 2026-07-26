@@ -31,6 +31,7 @@ HTTP status mapping (POST /spawn):
 from __future__ import annotations
 
 import json
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .auth import AuthValidator
@@ -39,6 +40,8 @@ from .results import error
 from .runner import ProcessManager
 from .service import spawn
 from .storage import Registry
+
+_WINDOWS = sys.platform == "win32"
 
 # Request body limit. /spawn requests are small, so generously limit to 64KiB (resource protection).
 MAX_BODY_BYTES = 64 * 1024
@@ -215,6 +218,9 @@ class _SpawnHandler(BaseHTTPRequestHandler):
     def _send_html(self, status: int, body: bytes) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        # The screen is compiled into the server process, so a cached copy can
+        # outlive an upgrade and talk to the API with stale client code.
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if self.command != "HEAD":
@@ -358,6 +364,21 @@ class _SpawnHandler(BaseHTTPRequestHandler):
         return
 
 
+class SpawnHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer with a platform-appropriate address-reuse policy.
+
+    http.server hardcodes ``allow_reuse_address = 1``. On Windows SO_REUSEADDR also
+    allows binding a port that is already LISTENing: a second instance starts without
+    error, prints the usual banner and then never receives a single request, while the
+    browser keeps talking to the old one. That silent duplicate is one of the ways the
+    UI ends up showing nothing but "Failed to fetch". Disable reuse there so a duplicate
+    start fails loudly with OSError; on POSIX keep it so a quick restart is not blocked
+    by sockets in TIME_WAIT.
+    """
+
+    allow_reuse_address = not _WINDOWS
+
+
 def make_server(
     host: str,
     port: int,
@@ -382,4 +403,4 @@ def make_server(
             "procman": procman,
         },
     )
-    return ThreadingHTTPServer((host, port), handler)
+    return SpawnHTTPServer((host, port), handler)

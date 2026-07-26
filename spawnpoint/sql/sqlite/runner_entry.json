@@ -1,0 +1,5 @@
+{
+  "upsert": "runner_entry_upsert.sql",
+  "list": "runner_entry_list.sql",
+  "delete": "runner_entry_delete.sql"
+}

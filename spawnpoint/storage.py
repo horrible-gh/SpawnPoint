@@ -1,16 +1,20 @@
 """Instance storage.
 
-Registry backed by SQLite, responsible for instance registration (Registrar) + ID sequence allocation.
+Registry backed by SQLite, responsible for instance registration (Registrar) + ID sequence allocation
++ runner entry persistence (so registered commands survive a server restart).
 Tables, constraints, indexes are in migration files (spawnpoint/sql/migration/sqlite);
 queries are in sqloader query files (spawnpoint/sql/sqlite), separate from code.
 
 Component mapping:
-- registry.insert(...)             → Instance Registrar write
-- registry.find_active_by_key(...) → Duplicate request detection read
-- registry.next_daily_seq(...)     → Allocator support (atomic sequence)
+- registry.insert(...)              → Instance Registrar write
+- registry.find_active_by_key(...)  → Duplicate request detection read
+- registry.next_daily_seq(...)      → Allocator support (atomic sequence)
+- registry.save_runner_entry(...)   → Runner entry store write (ProcessManager)
+- registry.list_runner_entries()    → Runner entry restore read (ProcessManager)
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from dataclasses import dataclass
@@ -125,6 +129,70 @@ class Registry:
             "spawn_instance", "find_active_by_key", (request_key, threshold)
         )
         return _row_to_instance(row) if row else None
+
+    # --- Runner entry persistence ---
+
+    def save_runner_entry(
+        self,
+        ident: str,
+        label: str,
+        cmd: str,
+        cwd: str | None,
+        env: dict | None,
+    ) -> bool:
+        """Insert or update one runner entry (registration data only, no live state).
+
+        Returns False on storage failure — the runner keeps working in memory, it
+        just loses the entry on the next restart.
+        """
+        ts = _to_utc_iso(datetime.now(timezone.utc))
+        payload = json.dumps(dict(env or {}), ensure_ascii=False)
+        try:
+            self._sq.execute(
+                "runner_entry",
+                "upsert",
+                (ident, label, cmd, cwd, payload, ts, ts),
+            )
+            return True
+        except sqlite3.Error:
+            return False
+
+    def delete_runner_entry(self, ident: str) -> bool:
+        try:
+            self._sq.execute("runner_entry", "delete", (ident,))
+            return True
+        except sqlite3.Error:
+            return False
+
+    def list_runner_entries(self) -> list[dict]:
+        """Return persisted runner entries (env decoded). Empty list on read failure."""
+        try:
+            rows = self._sq.fetch_all("runner_entry", "list")
+        except sqlite3.Error:
+            return []
+        return [
+            {
+                "id": row["id"],
+                "label": row["label"],
+                "cmd": row["cmd"],
+                "cwd": row["cwd"],
+                "env": _decode_env(row["env"]),
+            }
+            for row in rows or []
+        ]
+
+
+def _decode_env(raw) -> dict[str, str]:
+    """Parse the stored env JSON. Corrupted values degrade to {} rather than blocking restore."""
+    if not raw:
+        return {}
+    try:
+        env = json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(env, dict):
+        return {}
+    return {str(k): str(v) for k, v in env.items()}
 
 
 def _row_to_instance(row) -> SpawnInstance:
