@@ -5,6 +5,13 @@ Separate from `spawnpoint.service.spawn()` (instance registration) — that one 
 "this instance was created" in the database; this one actually starts/kills OS subprocesses.
 
 Per-process logs append stdout+stderr to log_dir/<id>.log.
+
+Registration data (label/cmd/cwd/env) is persisted through an optional `store`
+(`spawnpoint.storage.Registry`), so a server restart no longer wipes the command list.
+Live state (pid, popen handle) is deliberately NOT restored: after a restart there is no
+way to prove the recorded pid still belongs to that command, and the OS may have reused
+the number. Restored entries therefore come back as `stopped` / `pid=None` and the user
+resumes them with run().
 """
 from __future__ import annotations
 
@@ -73,18 +80,157 @@ class _Entry:
 
 _WINDOWS = sys.platform == "win32"
 
+# --- Windows: bind children to the server process lifetime ------------------
+#
+# Children are spawned into their own process group, so a hard kill of the server
+# (Task Manager, taskkill /F, closing the console window) leaves them running with no
+# chance for shutdown() to intervene. The restarted server then lists the command as
+# stopped while the old process still holds its port. A job object with
+# KILL_ON_JOB_CLOSE hands that cleanup to the kernel: when the last handle to the job
+# closes — i.e. when this process dies, however it dies — the children go with it.
+
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+_JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+
+_job_lock = threading.Lock()
+_job_handle = None
+_job_unavailable = False
+
+
+def _kernel32():
+    import ctypes
+    from ctypes import wintypes
+
+    lib = ctypes.WinDLL("kernel32", use_last_error=True)
+    lib.CreateJobObjectW.restype = wintypes.HANDLE
+    lib.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+    lib.SetInformationJobObject.restype = wintypes.BOOL
+    lib.SetInformationJobObject.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD
+    ]
+    lib.AssignProcessToJobObject.restype = wintypes.BOOL
+    lib.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    lib.CloseHandle.argtypes = [wintypes.HANDLE]
+    return lib
+
+
+def _kill_on_close_job():
+    """Return the process-wide job handle, creating it on first use (None if unavailable)."""
+    global _job_handle, _job_unavailable
+    with _job_lock:
+        if _job_handle is not None or _job_unavailable:
+            return _job_handle
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class _IoCounters(ctypes.Structure):
+                _fields_ = [
+                    ("ReadOperationCount", ctypes.c_ulonglong),
+                    ("WriteOperationCount", ctypes.c_ulonglong),
+                    ("OtherOperationCount", ctypes.c_ulonglong),
+                    ("ReadTransferCount", ctypes.c_ulonglong),
+                    ("WriteTransferCount", ctypes.c_ulonglong),
+                    ("OtherTransferCount", ctypes.c_ulonglong),
+                ]
+
+            class _BasicLimit(ctypes.Structure):
+                _fields_ = [
+                    ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+                    ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+                    ("LimitFlags", wintypes.DWORD),
+                    ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t),
+                    ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t),
+                    ("PriorityClass", wintypes.DWORD),
+                    ("SchedulingClass", wintypes.DWORD),
+                ]
+
+            class _ExtendedLimit(ctypes.Structure):
+                _fields_ = [
+                    ("BasicLimitInformation", _BasicLimit),
+                    ("IoInfo", _IoCounters),
+                    ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                    ("PeakJobMemoryUsed", ctypes.c_size_t),
+                ]
+
+            lib = _kernel32()
+            handle = lib.CreateJobObjectW(None, None)
+            if not handle:
+                raise OSError(ctypes.get_last_error(), "CreateJobObjectW failed")
+            info = _ExtendedLimit()
+            info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            if not lib.SetInformationJobObject(
+                handle,
+                _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                ctypes.byref(info),
+                ctypes.sizeof(info),
+            ):
+                lib.CloseHandle(handle)
+                raise OSError(ctypes.get_last_error(), "SetInformationJobObject failed")
+            _job_handle = handle
+        except (OSError, AttributeError, ValueError):
+            # Job objects are best effort: without them shutdown() still cleans up on
+            # every graceful exit, which is the common case.
+            _job_unavailable = True
+            _job_handle = None
+        return _job_handle
+
+
+def _bind_to_job(popen: subprocess.Popen) -> None:
+    handle = _kill_on_close_job()
+    if handle is None:
+        return
+    try:
+        _kernel32().AssignProcessToJobObject(handle, int(popen._handle))
+    except (OSError, AttributeError, ValueError):
+        pass
+
 
 class ProcessManager:
-    """Track running processes and provide run/stop/restart/list operations."""
+    """Track running processes and provide run/stop/restart/list operations.
 
-    def __init__(self, log_dir: str):
+    `store` is optional and duck-typed (save_runner_entry / delete_runner_entry /
+    list_runner_entries — see `spawnpoint.storage.Registry`). Without it the manager
+    behaves exactly as before: registrations live only in this process's memory.
+
+    `kill_children_on_exit` decides whether children are tied to this process's
+    lifetime (Windows job object) and is the default for shutdown(). Turn it off to
+    let started processes outlive the server — at the cost of the restarted server no
+    longer being able to stop or restart them.
+    """
+
+    def __init__(self, log_dir: str, store=None, kill_children_on_exit: bool = True):
         self._log_dir = log_dir
         os.makedirs(log_dir, exist_ok=True)
         self._lock = threading.Lock()
+        self._store = store
+        self._kill_children_on_exit = kill_children_on_exit
         self._entries: dict[str, _Entry] = {}
+        self._restore()
 
     def _log_path(self, ident: str) -> str:
         return os.path.join(self._log_dir, f"{ident}.log")
+
+    def _restore(self) -> None:
+        """Load persisted registrations as stopped entries (no live process attached)."""
+        if self._store is None:
+            return
+        for row in self._store.list_runner_entries():
+            ident = row["id"]
+            self._entries[ident] = _Entry(
+                row["label"], row["cmd"], row["cwd"], row["env"], self._log_path(ident)
+            )
+
+    def _persist(self, ident: str, entry: _Entry) -> None:
+        if self._store is None:
+            return
+        self._store.save_runner_entry(
+            ident, entry.label, entry.cmd, entry.cwd, entry.env
+        )
 
     def start(
         self, label: str, cmd: str, cwd: str | None = None, env: dict | None = None
@@ -93,6 +239,9 @@ class ProcessManager:
         entry = _Entry(label, cmd, cwd or None, env, self._log_path(ident))
         with self._lock:
             self._entries[ident] = entry
+        # Persist before spawning: a command that fails to launch is still a
+        # registration the user typed and expects to find after a restart.
+        self._persist(ident, entry)
         self._spawn(entry)
         return self._info(ident, entry)
 
@@ -134,6 +283,7 @@ class ProcessManager:
             entry.cmd = cmd
             entry.cwd = cwd or None
             entry.env = dict(env or {})
+        self._persist(ident, entry)
         self._refresh(entry)
         return self._info(ident, entry)
 
@@ -150,6 +300,8 @@ class ProcessManager:
             self._refresh(entry)
         with self._lock:
             self._entries.pop(ident, None)
+        if self._store is not None:
+            self._store.delete_runner_entry(ident)
         try:
             os.remove(entry.log_path)
         except FileNotFoundError:
@@ -222,6 +374,32 @@ class ProcessManager:
 
         return data.decode("utf-8", errors="replace"), offset + len(data)
 
+    def shutdown(self, kill_children: bool | None = None) -> None:
+        """Release runner resources on server exit. Safe to call more than once.
+
+        Children are spawned into their own process group/session, so they outlive the
+        server unless terminated here. When killing them (the default, see
+        `kill_children_on_exit`) a restart starts from a clean slate: registrations come
+        back as `stopped` and are resumed with run(). Otherwise the processes keep
+        running, but the restarted server can no longer stop or restart them from the UI.
+        """
+        if kill_children is None:
+            kill_children = self._kill_children_on_exit
+        with self._lock:
+            entries = list(self._entries.values())
+        for entry in entries:
+            alive = entry.popen is not None and entry.popen.poll() is None
+            if alive and kill_children:
+                entry.stop_requested = True
+                self._terminate(entry)
+                self._refresh(entry)
+            if entry.log_file is not None:
+                try:
+                    entry.log_file.close()
+                except OSError:
+                    pass
+                entry.log_file = None
+
     # --- Internal -------------------------------------------------------
 
     def _spawn(self, entry: _Entry, marker: str | None = None) -> None:
@@ -250,6 +428,8 @@ class ProcessManager:
         if _WINDOWS:
             command = "chcp 65001 >nul & " + command
         entry.popen = subprocess.Popen(command, **kwargs)
+        if _WINDOWS and self._kill_children_on_exit:
+            _bind_to_job(entry.popen)
         entry.started_at = now_kst()
         entry.ended_at = None
         entry.exit_code = None

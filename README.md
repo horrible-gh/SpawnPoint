@@ -16,9 +16,9 @@ spawnpoint/
   params.py          Parameters
   clock.py           Time/timezone utility (display=KST, storage/comparison=fixed-width UTC ISO)
   models.py          SpawnInstance model
-  storage.py         Registry — SQLite-backed store using sqloader, insert/query/seq
+  storage.py         Registry — SQLite-backed store using sqloader, insert/query/seq + runner entry persistence
   sql/
-    sqlite/            sqloader query files (spawn_instance.json / spawn_daily_seq.json + .sql)
+    sqlite/            sqloader query files (spawn_instance.json / spawn_daily_seq.json / runner_entry.json + .sql)
     migration/sqlite/  sqloader migration files (DDL)
   validator.py       Validation layer
   allocator.py       ID allocator
@@ -32,6 +32,7 @@ tests/
   test_http_integration.py Actual socket boot + end-to-end validation (+ healthz/405/413/404)
   test_runnerview.py       Verify one server serves both screen (/) and API (/spawn)
   test_runner.py           ProcessManager unit tests (start/stop/restart/list/logging)
+  test_runner_persistence.py  Server restart scenario (registrations survive, resume, shutdown cleanup)
   test_processes_http.py   /processes* routes end-to-end validation
 ```
 
@@ -101,6 +102,27 @@ registration (above) — they manage actual OS subprocess lifecycle.
   next `offset` (polling tail). UI polls every 1 second.
 - Non-existent id → HTTP 404 `not_found`.
 
+### Runner State Persistence
+
+Registration data (`id`, `label`, `cmd`, `cwd`, `env`) is stored in the `runner_entry`
+table of the same SQLite database, so **restarting the server no longer clears the
+command list**. On startup the entries are reloaded from the database.
+
+Live state is deliberately *not* restored. A recorded pid cannot be proven to still
+belong to that command after a restart (the OS reuses pid numbers), so restored entries
+come back as `status: "stopped"`, `pid: null` and are resumed with `POST /processes/<id>/run`
+(the ▶ button). Their previous log file stays readable because logs are keyed by id.
+
+By default processes started by the runner are **terminated when the server exits**, so a
+restart begins from a clean slate. On Windows this holds even for a hard kill (Task
+Manager, `taskkill /F`, closing the console window): children are assigned to a job object
+with `KILL_ON_JOB_CLOSE`. Set `SPAWNPOINT_KILL_CHILDREN_ON_EXIT=0` to let them keep
+running instead — but then the restarted server can no longer stop or restart them, since
+it only knows the registration, not the old process.
+
+Starting a second instance on a port that is already in use fails immediately with a
+message and exit code 1, rather than binding silently and answering nothing.
+
 ## ID Format
 
 `spwn_{YYYYMMDD}_{seq}{rand}` — per-day sequence (atomic increment, 4-digit zero-padded) + 6-digit hex
@@ -122,7 +144,8 @@ SPAWNPOINT_API_TOKENS="tok-a,tok-b" SPAWNPOINT_DB_PATH=/var/lib/spawnpoint.db py
 
 Environment variables: `SPAWNPOINT_HOST` (127.0.0.1), `SPAWNPOINT_PORT` (8091),
 `SPAWNPOINT_DB_PATH` (spawnpoint.db), `SPAWNPOINT_LOG_DIR` (logs, runner log directory),
-`SPAWNPOINT_API_TOKENS` (auth disabled if unset).
+`SPAWNPOINT_API_TOKENS` (auth disabled if unset),
+`SPAWNPOINT_KILL_CHILDREN_ON_EXIT` (1; set to 0 to leave runner processes alive after exit).
 
 ## Testing
 
@@ -147,6 +170,13 @@ provided by `spawnpoint/runner.py`'s `ProcessManager`. When you enter a command 
 an actual OS subprocess starts. Stop/restart buttons terminate/restart the actual process tree. The log
 panel polls `logs/<id>.log` every 1 second. Default local mode enables all features immediately — no
 separate token input needed.
+
+The screen distinguishes a server it cannot reach from an error the server replied with: while the
+connection is down the header dot turns red and shows `Cannot reach the server - retrying in Ns`
+(polling backs off 2s → 30s and recovers automatically), instead of printing the browser's raw
+`Failed to fetch`. When a selected command no longer exists on the server — the usual case after a
+restart — the selection is released, so pressing ▶ Run registers what is in the input box rather than
+addressing an id that is gone.
 
 Arbitrary OS command run/stop/restart/list, log tail, POSIX killpg / Windows taskkill /T are
 a separate domain from spawn instance registration (above); `runner.py` operates independently
