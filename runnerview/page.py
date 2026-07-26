@@ -1,4 +1,4 @@
-"""Mockup (dx0qx6f7) static page loader.
+"""Static page loader for Process Runner UI.
 
 Read `static/index.html` and cache it as bytes. Uses only the standard library.
 """
