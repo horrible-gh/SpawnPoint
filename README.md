@@ -157,5 +157,4 @@ exist yet — `runner.py` operates independently from that chain.
 
 > Note: Previously this screen was a separate app (`app/runner_main.py`, port 8092),
 > but there was no reason to run two processes, so it was integrated into the main server (`app/main.py`).
-> Next, the features advertised by the screen (actual run/stop/restart/logging) were wired up—
-> previously it was only mockup data.
+> The features advertised by the screen (actual run/stop/restart/logging) are now fully implemented.

@@ -56,12 +56,12 @@ class TestFrontendServedByMainServer(unittest.TestCase):
             finally:
                 exc.close()
 
-    def test_index_serves_static_mockup(self):
+    def test_index_serves_static_ui(self):
         status, content_type, body = self._get("/")
         self.assertEqual(status, 200)
         self.assertIn("text/html", content_type)
         self.assertEqual(body, INDEX_HTML)
-        self.assertIn(b"process runner", body)
+        self.assertIn(b"Process Runner", body)
         self.assertNotIn(b"tokenInput", body)
         self.assertNotIn("Bearer 토큰".encode("utf-8"), body)
 

@@ -3,7 +3,7 @@
 Uses only the standard library (http.server). Core logic is isolated as a pure function in
 handle_spawn(), so tests can call it directly without sockets.
 
-The screen (runner UI mockup) is not a separate process but served by this same server on the
+The screen (Process Runner UI) is not a separate process but served by this same server on the
 same port. Inject HTML bytes via make_server(..., index_html=...) and GET / , GET /index.html
 will serve that screen (omit it and those routes also return 404).
 
