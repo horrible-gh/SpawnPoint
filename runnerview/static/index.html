@@ -99,6 +99,10 @@
     border-radius:50%;background:#e8ffef}
   .toggle.off .sw{background:#3a4250}
   .toggle.off .sw::after{right:auto;left:2px;background:#8b98a8}
+  .maxlines{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12px}
+  .maxlines select{background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    color:var(--txt);padding:4px 8px;font-family:var(--mono);font-size:12px;outline:none}
+  .maxlines select:focus{border-color:var(--accent)}
   .logview{flex:1;overflow:auto;padding:10px 14px;font-family:var(--mono);
     font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-all;color:#9aa7b6}
   .logview .placeholder{color:var(--faint)}
@@ -150,6 +154,17 @@
     <div class="logbar">
       <span class="t" id="logTitle">Logs · <b>—</b></span>
       <div class="spacer"></div>
+      <label class="maxlines">Max lines
+        <select id="maxLinesSelect">
+          <option value="0">Unlimited</option>
+          <option value="30">30</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+          <option value="500">500</option>
+          <option value="1000">1000</option>
+        </select>
+      </label>
       <span class="toggle on" id="autoscrollToggle"><span class="sw"></span>Auto-scroll</span>
     </div>
     <div class="logview" id="logView"><div class="placeholder">Select a process on the left to view logs.</div></div>
@@ -173,6 +188,19 @@
   var POLL_BASE_MS = 2000;
   var POLL_MAX_MS = 30000;
 
+  var MAX_LINES_KEY = "spawnpoint.runnerview.maxLines";
+  var DEFAULT_MAX_LINES = 200;
+
+  function loadMaxLines(){
+    var n;
+    try { n = parseInt(window.localStorage.getItem(MAX_LINES_KEY), 10); }
+    catch (e) { n = NaN; }
+    return isNaN(n) ? DEFAULT_MAX_LINES : n;
+  }
+  function saveMaxLines(n){
+    try { window.localStorage.setItem(MAX_LINES_KEY, String(n)); } catch (e) {}
+  }
+
   var state = {
 
     processes: [],
@@ -183,6 +211,9 @@
     pollDelay: POLL_BASE_MS,
     refreshTimer: null,
     statusTimer: null,
+    maxLines: loadMaxLines(),
+    logLines: [],
+    logPending: "",
   };
 
   var el = {
@@ -202,7 +233,9 @@
     logTitle: document.getElementById("logTitle"),
     logView: document.getElementById("logView"),
     autoscrollToggle: document.getElementById("autoscrollToggle"),
+    maxLinesSelect: document.getElementById("maxLinesSelect"),
   };
+  el.maxLinesSelect.value = String(state.maxLines);
 
 
   function showError(msg){
@@ -400,9 +433,33 @@
     el.saveBtn.disabled = false;
     el.deleteBtn.disabled = false;
     state.logOffset = 0;
+    state.logLines = [];
+    state.logPending = "";
     el.logView.innerHTML = '<div class="placeholder">Loading…</div>';
     renderProcesses();
     pollLog(true);
+  }
+
+  function appendLogText(text){
+    var combined = state.logPending + text;
+    var lines = combined.split("\n");
+    state.logPending = lines.pop();
+    if (lines.length){
+      state.logLines = state.logLines.concat(lines);
+      trimLogLines();
+    }
+  }
+
+  function trimLogLines(){
+    if (state.maxLines > 0 && state.logLines.length > state.maxLines){
+      state.logLines = state.logLines.slice(-state.maxLines);
+    }
+  }
+
+  function renderLogView(){
+    var text = state.logLines.join("\n");
+    if (state.logPending) text += (text ? "\n" : "") + state.logPending;
+    el.logView.textContent = text;
   }
 
   function pollLog(reset){
@@ -412,12 +469,15 @@
     api("/processes/" + id + "/logs?offset=" + state.logOffset).then(function(data){
       if (id !== state.selectedId) return;  // selection changed while the request was in flight
       markOnline();
-      if (reset) el.logView.textContent = "";
+      if (reset){
+        state.logLines = [];
+        state.logPending = "";
+      }
       if (data.text){
-        if (el.logView.querySelector(".placeholder")) el.logView.textContent = "";
-        el.logView.textContent += data.text;
+        appendLogText(data.text);
+        renderLogView();
         if (state.autoscroll) el.logView.scrollTop = el.logView.scrollHeight;
-      } else if (reset && !el.logView.textContent) {
+      } else if (reset && !state.logLines.length && !state.logPending) {
         el.logView.innerHTML = '<div class="placeholder">(No log output yet)</div>';
       }
       state.logOffset = data.next_offset;
@@ -438,6 +498,17 @@
     state.autoscroll = !state.autoscroll;
     el.autoscrollToggle.classList.toggle("on", state.autoscroll);
     el.autoscrollToggle.classList.toggle("off", !state.autoscroll);
+  });
+
+  el.maxLinesSelect.addEventListener("change", function(){
+    var n = parseInt(el.maxLinesSelect.value, 10);
+    state.maxLines = isNaN(n) ? 0 : n;
+    saveMaxLines(state.maxLines);
+    if (state.selectedId && (state.logLines.length || state.logPending)){
+      trimLogLines();
+      renderLogView();
+      if (state.autoscroll) el.logView.scrollTop = el.logView.scrollHeight;
+    }
   });
 
   el.runBtn.addEventListener("click", function(){
