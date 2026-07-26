@@ -1,11 +1,10 @@
-"""실행기(Process Runner) — 실제 OS 프로세스 run/stop/restart/list + 로그 캡처.
+"""Runner (Process Runner) — actual OS subprocess run/stop/restart/list + log capture.
 
-runnerview 화면이 광고하는 기능(실행/정지/재시작/목록, 로그 tail)을 실제로
-수행하는 백엔드. `spawnpoint.service.spawn()`(P-0005 인스턴스 등록 프로토콜)과는
-무관한 별도 기능이다 — 저건 DB에 "이런 인스턴스를 만들었다"는 레코드를 남기는
-용도이고, 이건 실제 서브프로세스를 띄우고 죽이는 용도다.
+Backend that actually performs the functions advertised by the runnerview screen (run/stop/restart/list, log tail).
+Separate from `spawnpoint.service.spawn()` (P-0005 instance registration protocol) — that one records
+"this instance was created" in the database; this one actually starts/kills OS subprocesses.
 
-프로세스별 로그는 log_dir/<id>.log 에 stdout+stderr를 합쳐 이어붙인다(append).
+Per-process logs append stdout+stderr to log_dir/<id>.log.
 """
 from __future__ import annotations
 
@@ -76,7 +75,7 @@ _WINDOWS = sys.platform == "win32"
 
 
 class ProcessManager:
-    """실행 중인 프로세스들을 추적하고 run/stop/restart/list를 제공한다."""
+    """Track running processes and provide run/stop/restart/list operations."""
 
     def __init__(self, log_dir: str):
         self._log_dir = log_dir
@@ -108,7 +107,7 @@ class ProcessManager:
         return self._info(ident, entry)
 
     def run(self, ident: str) -> ProcessInfo | None:
-        """정지/종료된 등록 항목을 다시 실행한다."""
+        """Resume a stopped/exited registered entry."""
         with self._lock:
             entry = self._entries.get(ident)
         if entry is None:
@@ -126,7 +125,7 @@ class ProcessManager:
         cwd: str | None = None,
         env: dict | None = None,
     ) -> ProcessInfo | None:
-        """등록 항목의 설정을 갱신한다. 실행 중이면 다음 재실행부터 적용된다."""
+        """Update entry settings. Applies on next restart if running."""
         with self._lock:
             entry = self._entries.get(ident)
             if entry is None:
@@ -139,7 +138,7 @@ class ProcessManager:
         return self._info(ident, entry)
 
     def delete(self, ident: str) -> bool:
-        """등록 항목을 제거한다. 실행 중인 프로세스와 로그도 함께 정리한다."""
+        """Remove entry. Also cleans up running process and logs."""
         with self._lock:
             entry = self._entries.get(ident)
         if entry is None:
@@ -193,7 +192,7 @@ class ProcessManager:
         return entry.log_path if entry else None
 
     def read_log(self, ident: str, offset: int) -> tuple[str, int] | None:
-        """offset 바이트 이후 새로 쓰인 로그 텍스트와 다음 offset을 돌려준다."""
+        """Return new log text after offset and next offset."""
         path = self.log_path(ident)
         if path is None:
             return None
@@ -205,9 +204,9 @@ class ProcessManager:
         if not data:
             return "", offset
 
-        # Windows 명령은 UTF-8뿐 아니라 시스템 코드 페이지(cp949 등)로도
-        # 출력한다. 마지막 문자가 아직 덜 쓰인 경우에는 그 바이트를 다음
-        # polling에서 다시 읽어 문자 중간이 깨지지 않게 한다.
+        # Windows commands output via both UTF-8 and system code page (cp949, etc.).
+        # If the last character is incomplete, keep those bytes for the next poll
+        # to avoid splitting multi-byte characters.
         encodings = ["utf-8"]
         if _WINDOWS:
             encodings.extend(["mbcs", "cp949"])
@@ -223,7 +222,7 @@ class ProcessManager:
 
         return data.decode("utf-8", errors="replace"), offset + len(data)
 
-    # --- 내부 -------------------------------------------------------
+    # --- Internal -------------------------------------------------------
 
     def _spawn(self, entry: _Entry, marker: str | None = None) -> None:
         entry.log_file = open(entry.log_path, "ab", buffering=0)

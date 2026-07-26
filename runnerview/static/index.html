@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>실행기 · Process Runner</title>
+<title>Process Runner</title>
 <style>
   :root{
     --bg:#0f1216; --panel:#161b22; --panel2:#1b222c; --line:#252d38;
@@ -108,54 +108,54 @@
 <body>
 
 <header>
-  <div class="logo"><span class="dot"></span>실행기 <small>process runner · 127.0.0.1:호스트만</small></div>
+  <div class="logo"><span class="dot"></span>Process Runner <small>local · 127.0.0.1 only</small></div>
   <div class="spacer"></div>
   <span class="err" id="globalErr"></span>
 
 </header>
 
 <div class="newrun">
-  <label>이름</label>
-  <input class="label" id="labelInput" placeholder="표시 이름 (선택)">
-  <label>명령</label>
-  <input class="cmd" id="cmdInput" placeholder="실행할 명령어… (예: python -m http.server 8200)">
+  <label>Label</label>
+  <input class="label" id="labelInput" placeholder="Display name (optional)">
+  <label>Command</label>
+  <input class="cmd" id="cmdInput" placeholder="Command to run… (example: python -m http.server 8200)">
   <label>cwd</label>
-  <input class="cwd" id="cwdInput" placeholder="작업 디렉토리 (선택)">
+  <input class="cwd" id="cwdInput" placeholder="Working directory (optional)">
   <label>env</label>
-  <input class="env" id="envInput" placeholder="KEY=VAL,KEY2=VAL2 (선택)">
-  <button class="btn btn-run" id="runBtn">▶ 실행</button>
-  <button class="btn btn-save" id="saveBtn" disabled>변경 저장</button>
-  <button class="btn btn-delete" id="deleteBtn" disabled>삭제</button>
-  <button class="btn btn-new" id="newBtn">새 명령</button>
+  <input class="env" id="envInput" placeholder="KEY=VAL,KEY2=VAL2 (optional)">
+  <button class="btn btn-run" id="runBtn">▶ Run</button>
+  <button class="btn btn-save" id="saveBtn" disabled>Save Changes</button>
+  <button class="btn btn-delete" id="deleteBtn" disabled>Delete</button>
+  <button class="btn btn-new" id="newBtn">New Command</button>
 </div>
 
 <main>
   <div class="tablewrap">
     <table>
       <thead><tr>
-        <th style="width:34%">이름 / 명령</th><th>상태</th><th>PID</th><th>가동시간</th><th style="width:120px">조작</th>
+        <th style="width:34%">Name / Command</th><th>Status</th><th>PID</th><th>Uptime</th><th style="width:120px">Actions</th>
       </tr></thead>
       <tbody id="procBody">
-        <tr class="empty"><td colspan="5">실행 중인 프로세스가 없습니다.</td></tr>
+        <tr class="empty"><td colspan="5">No running processes.</td></tr>
       </tbody>
     </table>
   </div>
 
   <div class="logs">
     <div class="logbar">
-      <span class="t" id="logTitle">로그 · <b>—</b></span>
+      <span class="t" id="logTitle">Logs · <b>—</b></span>
       <div class="spacer"></div>
-      <span class="toggle on" id="autoscrollToggle"><span class="sw"></span>자동 스크롤</span>
+      <span class="toggle on" id="autoscrollToggle"><span class="sw"></span>Auto-scroll</span>
     </div>
-    <div class="logview" id="logView"><div class="placeholder">왼쪽에서 프로세스를 선택하면 로그가 표시됩니다.</div></div>
+    <div class="logview" id="logView"><div class="placeholder">Select a process on the left to view logs.</div></div>
   </div>
 </main>
 
 <div class="footnote">
   <span><b>API</b> POST /processes · /processes/&lt;id&gt;/stop · /restart · GET /processes</span>
-  <span><b>로그</b> polling tail(1초) · GET /processes/&lt;id&gt;/logs?offset=N · logs/&lt;id&gt;.log</span>
-  <span><b>종료</b> POSIX killpg(SIGTERM→SIGKILL) / Windows taskkill /T /F (자식까지)</span>
-  <span><b>바인드</b> 기본 127.0.0.1 · 로컬 사용</span>
+  <span><b>Logs</b> polling tail (1s) · GET /processes/&lt;id&gt;/logs?offset=N · logs/&lt;id&gt;.log</span>
+  <span><b>Termination</b> POSIX killpg(SIGTERM→SIGKILL) / Windows taskkill /T /F (children too)</span>
+  <span><b>Binding</b> Default 127.0.0.1 · local use only</span>
 </div>
 
 <script>
@@ -246,8 +246,8 @@
     el.deleteBtn.disabled = true;
     renderProcesses();
     if (resetLog){
-      el.logTitle.innerHTML = "로그 · <b>—</b>";
-      el.logView.innerHTML = '<div class="placeholder">왼쪽에서 프로세스를 선택하면 로그가 표시됩니다.</div>';
+      el.logTitle.innerHTML = "Logs · <b>—</b>";
+      el.logView.innerHTML = '<div class="placeholder">Select a process on the left to view logs.</div>';
     }
   }
 
@@ -258,7 +258,7 @@
     var h = Math.floor(s / 3600); s -= h * 3600;
     var m = Math.floor(s / 60); s -= m * 60;
     var hh = String(h).padStart(2, "0"), mm = String(m).padStart(2, "0"), ss = String(s).padStart(2, "0");
-    return days > 0 ? (days + "일 " + hh + ":" + mm + ":" + ss) : (hh + ":" + mm + ":" + ss);
+    return days > 0 ? (days + "d " + hh + ":" + mm + ":" + ss) : (hh + ":" + mm + ":" + ss);
   }
 
   function statusChip(p){
@@ -270,7 +270,7 @@
 
   function renderProcesses(){
     if (!state.processes.length){
-      el.procBody.innerHTML = '<tr class="empty"><td colspan="5">실행 중인 프로세스가 없습니다.</td></tr>';
+      el.procBody.innerHTML = '<tr class="empty"><td colspan="5">No running processes.</td></tr>';
       return;
     }
     var rows = state.processes.map(function(p){
@@ -307,7 +307,7 @@
       showError("");
       renderProcesses();
       var sel = state.processes.find(function(p){ return p.id === state.selectedId; });
-      if (sel) el.logTitle.innerHTML = '로그 · <b>' + escapeHtml(sel.label) + '</b> (pid ' + (sel.pid != null ? sel.pid : "—") + ')';
+      if (sel) el.logTitle.innerHTML = 'Logs · <b>' + escapeHtml(sel.label) + '</b> (pid ' + (sel.pid != null ? sel.pid : "—") + ')';
     }).catch(function(e){ showError(e.message); });
   }
 
@@ -322,7 +322,7 @@
     el.saveBtn.disabled = false;
     el.deleteBtn.disabled = false;
     state.logOffset = 0;
-    el.logView.innerHTML = '<div class="placeholder">불러오는 중…</div>';
+    el.logView.innerHTML = '<div class="placeholder">Loading…</div>';
     renderProcesses();
     pollLog(true);
   }
@@ -336,7 +336,7 @@
         el.logView.textContent += data.text;
         if (state.autoscroll) el.logView.scrollTop = el.logView.scrollHeight;
       } else if (reset && !el.logView.textContent) {
-        el.logView.innerHTML = '<div class="placeholder">(아직 로그 출력이 없습니다)</div>';
+        el.logView.innerHTML = '<div class="placeholder">(No log output yet)</div>';
       }
       state.logOffset = data.next_offset;
     }).catch(function(e){ showError(e.message); });
@@ -351,7 +351,7 @@
 
   el.runBtn.addEventListener("click", function(){
     var cmd = el.cmdInput.value.trim();
-    if (!cmd){ showError("명령을 입력하세요."); return; }
+    if (!cmd){ showError("Enter a command."); return; }
     el.runBtn.disabled = true;
     var request = state.selectedId ? api("/processes/" + state.selectedId + "/run", { method: "POST" })
       : api("/processes", {
@@ -375,7 +375,7 @@
   el.saveBtn.addEventListener("click", function(){
     if (!state.selectedId) return;
     var payload = formPayload();
-    if (!payload.cmd){ showError("명령을 입력하세요."); return; }
+    if (!payload.cmd){ showError("Enter a command."); return; }
     el.saveBtn.disabled = true;
     api("/processes/" + state.selectedId, { method: "PUT", body: payload })
       .then(function(){
@@ -388,7 +388,7 @@
 
   el.deleteBtn.addEventListener("click", function(){
     if (!state.selectedId) return;
-    if (!window.confirm("선택한 명령과 로그를 삭제할까요?")) return;
+    if (!window.confirm("Delete this command and its logs?")) return;
     var id = state.selectedId;
     el.deleteBtn.disabled = true;
     api("/processes/" + id, { method: "DELETE" })

@@ -1,27 +1,27 @@
-"""HTTP 어댑터 — 엔드포인트 POST /spawn (프로토콜 P-0005) + 운영 부가 라우트.
+"""HTTP adapter — endpoint POST /spawn (protocol P-0005) + operational auxiliary routes.
 
-표준 라이브러리(http.server)만 사용한다. 핵심 처리는 handle_spawn()에
-순수 함수로 분리하여, 소켓 없이도 테스트가 직접 호출할 수 있게 한다.
+Uses only the standard library (http.server). Core logic is isolated as a pure function in
+handle_spawn(), so tests can call it directly without sockets.
 
-화면(실행기 시안 정적 뷰)은 별도 프로세스가 아니라 이 서버가 같은 포트에서
-함께 서빙한다. make_server(..., index_html=...) 로 HTML 바이트를 주입하면
-GET / , GET /index.html 에서 그 화면을 돌려준다(미주입 시 해당 경로도 404).
+The screen (runner UI mockup) is not a separate process but served by this same server on the
+same port. Inject HTML bytes via make_server(..., index_html=...) and GET / , GET /index.html
+will serve that screen (omit it and those routes also return 404).
 
-라우트:
-    POST /spawn                    인스턴스 생성 (P-0005)
-    GET  / , /index.html           화면(index_html 주입 시)
-    GET  /healthz                  라이브니스 점검
-    GET  /processes                실행기: 프로세스 목록
-    POST /processes                실행기: 새 프로세스 실행
-    POST /processes/<id>/stop      실행기: 정지(프로세스 트리 종료)
-    POST /processes/<id>/restart   실행기: 재시작
-    GET  /processes/<id>/logs      실행기: 로그 tail (?offset=<바이트>)
-    그 외                          404 (알 수 없는 경로) / 405 (미지원 메서드)
+Routes:
+    POST /spawn                    Instance creation (P-0005)
+    GET  / , /index.html           Screen (if index_html injected)
+    GET  /healthz                  Liveness check
+    GET  /processes                Runner: process list
+    POST /processes                Runner: start new process
+    POST /processes/<id>/stop      Runner: terminate (process tree)
+    POST /processes/<id>/restart   Runner: restart
+    GET  /processes/<id>/logs      Runner: log tail (?offset=<bytes>)
+    others                         404 (unknown path) / 405 (unsupported method)
 
-/processes* 라우트는 /spawn과 동일한 인증 정책을 사용한다. 토큰 설정이 없는
-기본 로컬 실행에서는 인증 없이 동작한다.
+/processes* routes use the same auth policy as /spawn. In default local mode (no tokens),
+they work without authentication.
 
-HTTP 상태 매핑(POST /spawn):
+HTTP status mapping (POST /spawn):
     ok=true            -> 200
     unauthorized       -> 401
     invalid_request    -> 400
@@ -40,10 +40,10 @@ from .runner import ProcessManager
 from .service import spawn
 from .storage import Registry
 
-# 요청 본문 상한. /spawn 요청은 작으므로 넉넉히 64KiB 로 제한한다(자원 보호).
+# Request body limit. /spawn requests are small, so generously limit to 64KiB (resource protection).
 MAX_BODY_BYTES = 64 * 1024
 
-# 화면(정적 뷰)을 서빙할 GET 경로.
+# GET paths that serve the static screen view.
 _INDEX_PATHS = {"/", "/index.html"}
 
 _STATUS_BY_CODE = {
@@ -57,7 +57,7 @@ _STATUS_BY_CODE = {
 
 
 def parse_bearer(headers) -> str | None:
-    """Authorization 헤더에서 Bearer 토큰을 추출한다(없거나 형식 불량이면 None)."""
+    """Extract Bearer token from Authorization header (None if missing or malformed)."""
     raw = headers.get("Authorization") or headers.get("authorization")
     if not raw:
         return None
@@ -69,10 +69,10 @@ def parse_bearer(headers) -> str | None:
 
 
 def handle_spawn(headers, body_bytes: bytes, now, registry, auth):
-    """(status_code, response_dict) 를 돌려주는 전송-독립 처리기."""
+    """Transport-independent handler that returns (status_code, response_dict)."""
     if body_bytes is not None and len(body_bytes) > MAX_BODY_BYTES:
         return 413, error(
-            "payload_too_large", None, "요청 본문이 너무 큽니다."
+            "payload_too_large", None, "Request body is too large."
         )
 
     token = parse_bearer(headers)
@@ -80,9 +80,9 @@ def handle_spawn(headers, body_bytes: bytes, now, registry, auth):
     try:
         payload = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
     except (ValueError, UnicodeDecodeError):
-        return 400, error("invalid_request", None, "요청 본문이 올바른 JSON이 아닙니다.")
+        return 400, error("invalid_request", None, "Request body is not valid JSON.")
     if not isinstance(payload, dict):
-        return 400, error("invalid_request", None, "요청 본문은 객체여야 합니다.")
+        return 400, error("invalid_request", None, "Request body must be an object.")
 
     request = dict(payload)
     request["token"] = token
@@ -95,7 +95,7 @@ def handle_spawn(headers, body_bytes: bytes, now, registry, auth):
     return _STATUS_BY_CODE.get(code, 400), result
 
 
-# 실행기(process runner) 요청 본문 상한 — 명령/env가 포함되므로 조금 더 넉넉히 둔다.
+# Process runner request body limit — includes command/env, so allow more.
 MAX_PROCESS_BODY_BYTES = 64 * 1024
 
 _CMD_MAX_LEN = 4096
@@ -109,7 +109,7 @@ def _check_auth(headers, auth: AuthValidator) -> bool:
 def handle_processes_list(headers, procman, auth):
     """(status_code, response_dict) — GET /processes."""
     if not _check_auth(headers, auth):
-        return 401, error("unauthorized", None, "유효한 인증 토큰이 필요합니다.")
+        return 401, error("unauthorized", None, "Valid authentication token required.")
     processes = [p.to_public() for p in procman.list()]
     return 200, {"ok": True, "processes": processes}
 
@@ -117,36 +117,36 @@ def handle_processes_list(headers, procman, auth):
 def handle_process_start(
     headers, body_bytes: bytes, procman, auth, ident: str | None = None
 ):
-    """(status_code, response_dict) — POST /processes 또는 PUT /processes/<id>."""
+    """(status_code, response_dict) — POST /processes or PUT /processes/<id>."""
     if body_bytes is not None and len(body_bytes) > MAX_PROCESS_BODY_BYTES:
-        return 413, error("payload_too_large", None, "요청 본문이 너무 큽니다.")
+        return 413, error("payload_too_large", None, "Request body is too large.")
     if not _check_auth(headers, auth):
-        return 401, error("unauthorized", None, "유효한 인증 토큰이 필요합니다.")
+        return 401, error("unauthorized", None, "Valid authentication token required.")
 
     try:
         payload = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
     except (ValueError, UnicodeDecodeError):
-        return 400, error("invalid_request", None, "요청 본문이 올바른 JSON이 아닙니다.")
+        return 400, error("invalid_request", None, "Request body is not valid JSON.")
     if not isinstance(payload, dict):
-        return 400, error("invalid_request", None, "요청 본문은 객체여야 합니다.")
+        return 400, error("invalid_request", None, "Request body must be an object.")
 
     cmd = payload.get("cmd")
     if not isinstance(cmd, str) or not cmd.strip():
-        return 400, error("invalid_request", "cmd", "cmd는 비어 있을 수 없습니다.")
+        return 400, error("invalid_request", "cmd", "cmd cannot be empty.")
     if len(cmd) > _CMD_MAX_LEN:
-        return 400, error("invalid_request", "cmd", "cmd가 너무 깁니다.")
+        return 400, error("invalid_request", "cmd", "cmd is too long.")
 
     label = payload.get("label")
     if label is not None and (not isinstance(label, str) or not label.strip()):
-        return 400, error("invalid_request", "label", "label은 문자열이어야 합니다.")
+        return 400, error("invalid_request", "label", "label must be a string.")
     if isinstance(label, str) and len(label) > _LABEL_MAX_LEN:
-        return 400, error("invalid_request", "label", "label이 너무 깁니다.")
+        return 400, error("invalid_request", "label", "label is too long.")
     if not label:
         label = cmd.split(None, 1)[0]
 
     cwd = payload.get("cwd")
     if cwd is not None and (not isinstance(cwd, str) or not cwd.strip()):
-        return 400, error("invalid_request", "cwd", "cwd는 문자열이어야 합니다.")
+        return 400, error("invalid_request", "cwd", "cwd must be a string.")
 
     env = payload.get("env")
     if env is not None:
@@ -154,7 +154,7 @@ def handle_process_start(
             isinstance(k, str) and isinstance(v, str) for k, v in env.items()
         ):
             return 400, error(
-                "invalid_request", "env", "env는 문자열 키/값의 객체여야 합니다."
+                "invalid_request", "env", "env must be an object with string keys and values."
             )
 
     if ident is None:
@@ -162,14 +162,14 @@ def handle_process_start(
     else:
         info = procman.update(ident, label, cmd, cwd=cwd, env=env)
         if info is None:
-            return 404, error("not_found", None, "해당 프로세스를 찾을 수 없습니다.")
+            return 404, error("not_found", None, "Process not found.")
     return 200, {"ok": True, "process": info.to_public()}
 
 
 def handle_process_action(ident: str, action: str, headers, procman, auth):
     """(status_code, response_dict) — POST /processes/<id>/stop|restart."""
     if not _check_auth(headers, auth):
-        return 401, error("unauthorized", None, "유효한 인증 토큰이 필요합니다.")
+        return 401, error("unauthorized", None, "Valid authentication token required.")
     if action == "stop":
         info = procman.stop(ident)
     elif action == "restart":
@@ -177,19 +177,19 @@ def handle_process_action(ident: str, action: str, headers, procman, auth):
     elif action == "run":
         info = procman.run(ident)
     else:
-        return 404, error("not_found", None, "알 수 없는 엔드포인트입니다.")
+        return 404, error("not_found", None, "Unknown endpoint.")
     if info is None:
-        return 404, error("not_found", None, "해당 프로세스를 찾을 수 없습니다.")
+        return 404, error("not_found", None, "Process not found.")
     return 200, {"ok": True, "process": info.to_public()}
 
 
 def handle_process_logs(ident: str, headers, offset: int, procman, auth):
     """(status_code, response_dict) — GET /processes/<id>/logs?offset=<n>."""
     if not _check_auth(headers, auth):
-        return 401, error("unauthorized", None, "유효한 인증 토큰이 필요합니다.")
+        return 401, error("unauthorized", None, "Valid authentication token required.")
     result = procman.read_log(ident, offset)
     if result is None:
-        return 404, error("not_found", None, "해당 프로세스를 찾을 수 없습니다.")
+        return 404, error("not_found", None, "Process not found.")
     text, next_offset = result
     return 200, {"ok": True, "text": text, "next_offset": next_offset}
 
@@ -197,11 +197,11 @@ def handle_process_logs(ident: str, headers, offset: int, procman, auth):
 class _SpawnHandler(BaseHTTPRequestHandler):
     server_version = "SpawnPoint/0.1"
 
-    # 서버 인스턴스가 주입한다.
+    # Injected by server instance.
     registry: Registry
     auth: AuthValidator
-    procman: ProcessManager | None = None  # 실행기(process runner), 미주입 시 /processes 404
-    index_html: bytes | None = None  # 화면 HTML(미주입 시 화면 라우트도 404)
+    procman: ProcessManager | None = None  # Runner (process runner); 404 if not injected
+    index_html: bytes | None = None  # Screen HTML; screen routes also 404 if not injected
 
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -239,7 +239,7 @@ class _SpawnHandler(BaseHTTPRequestHandler):
             return None
         return self.rfile.read(length) if length > 0 else b""
 
-    def do_POST(self) -> None:  # noqa: N802 (http.server 규약)
+    def do_POST(self) -> None:  # noqa: N802 (http.server convention)
         path = self._path()
         parts = [p for p in path.split("/") if p]
 
@@ -247,7 +247,7 @@ class _SpawnHandler(BaseHTTPRequestHandler):
             body = self._read_body(MAX_BODY_BYTES)
             if body is None:
                 self._send_json(
-                    413, error("payload_too_large", None, "요청 본문이 너무 큽니다.")
+                    413, error("payload_too_large", None, "Request body is too large.")
                 )
                 return
             status, payload = handle_spawn(
@@ -261,7 +261,7 @@ class _SpawnHandler(BaseHTTPRequestHandler):
                 body = self._read_body(MAX_PROCESS_BODY_BYTES)
                 if body is None:
                     self._send_json(
-                        413, error("payload_too_large", None, "요청 본문이 너무 큽니다.")
+                        413, error("payload_too_large", None, "Request body is too large.")
                     )
                     return
                 status, payload = handle_process_start(
@@ -276,7 +276,7 @@ class _SpawnHandler(BaseHTTPRequestHandler):
                 self._send_json(status, payload)
                 return
 
-        self._send_json(404, error("not_found", None, "알 수 없는 엔드포인트입니다."))
+        self._send_json(404, error("not_found", None, "Unknown endpoint."))
 
     def do_GET(self) -> None:  # noqa: N802
         path = self._path()
@@ -306,7 +306,7 @@ class _SpawnHandler(BaseHTTPRequestHandler):
                 self._send_json(status, payload)
                 return
 
-        self._send_json(404, error("not_found", None, "알 수 없는 엔드포인트입니다."))
+        self._send_json(404, error("not_found", None, "Unknown endpoint."))
 
     def do_PUT(self) -> None:  # noqa: N802
         path = self._path()
@@ -315,7 +315,7 @@ class _SpawnHandler(BaseHTTPRequestHandler):
             body = self._read_body(MAX_PROCESS_BODY_BYTES)
             if body is None:
                 self._send_json(
-                    413, error("payload_too_large", None, "요청 본문이 너무 큽니다.")
+                    413, error("payload_too_large", None, "Request body is too large.")
                 )
                 return
             status, payload = handle_process_start(
@@ -328,15 +328,16 @@ class _SpawnHandler(BaseHTTPRequestHandler):
             self._send_json(status, payload)
             return
         self._method_not_allowed()
+
     def do_DELETE(self) -> None:  # noqa: N802
         path = self._path()
         parts = [p for p in path.split("/") if p]
         if self.procman is not None and len(parts) == 2 and parts[0] == "processes":
             if not _check_auth(self.headers, self.auth):
-                self._send_json(401, error("unauthorized", None, "유효한 인증 토큰이 필요합니다."))
+                self._send_json(401, error("unauthorized", None, "Valid authentication token required."))
                 return
             if not self.procman.delete(parts[1]):
-                self._send_json(404, error("not_found", None, "해당 프로세스를 찾을 수 없습니다."))
+                self._send_json(404, error("not_found", None, "Process not found."))
                 return
             self._send_json(200, {"ok": True, "deleted_id": parts[1]})
             return
@@ -347,13 +348,13 @@ class _SpawnHandler(BaseHTTPRequestHandler):
 
     def _method_not_allowed(self) -> None:
         self._send_json(
-            405, error("method_not_allowed", None, "허용되지 않은 메서드입니다.")
+            405, error("method_not_allowed", None, "Method not allowed.")
         )
 
-    # 미지원 메서드는 501 대신 명시적 405(JSON)로 응답한다.
+    # Unsupported methods return 501 by default; instead send explicit 405 (JSON).
     do_PATCH = _method_not_allowed
 
-    def log_message(self, fmt, *args):  # 기본 stderr 접근 로그 억제
+    def log_message(self, fmt, *args):  # Suppress default stderr access logs
         return
 
 
@@ -365,11 +366,11 @@ def make_server(
     index_html: bytes | None = None,
     procman: ProcessManager | None = None,
 ):
-    """POST /spawn + (index_html 주입 시) 화면 + (procman 주입 시) /processes* 를 함께 처리한다.
+    """Handle POST /spawn + (if index_html injected) screen + (if procman injected) /processes* together.
 
-    아직 serve하지 않는다. index_html 을 넘기면 GET / , /index.html 에서 그 HTML을
-    같은 포트로 서빙한다 — 화면을 위해 별도 프로세스를 띄울 필요가 없다. procman을
-    넘기면 실행기 라우트(/processes*)가 활성화된다(미주입 시 404).
+    Does not start serving yet. Pass index_html to serve that HTML on GET / , /index.html on the same port—
+    no need to start a separate process for the screen. Pass procman to enable runner routes (/processes*);
+    omit it and those return 404.
     """
     handler = type(
         "BoundSpawnHandler",
