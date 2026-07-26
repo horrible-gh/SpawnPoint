@@ -1,6 +1,6 @@
 """SpawnPoint 단위 테스트.
 
-프로토콜 P-0005의 네 시나리오와 로직 L-0006의 경계 조건(§5)을 검증한다.
+spawn 프로토콜의 네 시나리오와 경계 조건을 검증한다.
 표준 라이브러리 unittest만 사용한다. 저장소는 sqloader(SQLite, 임시 파일)를 쓴다.
 """
 from __future__ import annotations

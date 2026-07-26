@@ -1,9 +1,9 @@
-"""Top-level handler — L-0006 §2.1 spawn().
+"""Top-level handler — spawn().
 
-Assembles the decision flow (Intake→Validator→Allocator→Registrar→Responder) from D-0004.
+Assembles the decision flow (Intake→Validator→Allocator→Registrar→Responder).
 Implemented as a pure function independent of the transport layer, so tests can call it directly.
 
-request dictionary format (P-0005 + transport-layer-injected token):
+request dictionary format (transport-layer-injected token included):
     {
       "token": "<bearer token or None>",
       "requester": "...",
@@ -84,7 +84,7 @@ def spawn(
 
     written = registry.insert(instance)
     if not written.ok:
-        # ID collision → retry key lookup → return existing if found (L-0006 §2.1 retry path)
+        # ID collision → retry key lookup → return existing if found (retry path)
         if written.reason == "duplicate_key" and request_key is not None:
             existing = registry.find_active_by_key(request_key, now, dedup_window)
             if existing is not None:

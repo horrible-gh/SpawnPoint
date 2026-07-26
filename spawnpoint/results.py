@@ -1,4 +1,4 @@
-"""Response builder (P-0005 response format)."""
+"""Response builder."""
 
 from . import models
 

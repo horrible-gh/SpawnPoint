@@ -1,4 +1,4 @@
-"""Validation layer (Validator) — L-0006 §2.2 / §5.
+"""Validation layer (Validator).
 
 Determines if a request meets creation conditions. On failure, returns the violated field and message.
 """

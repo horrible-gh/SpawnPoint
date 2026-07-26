@@ -1,7 +1,7 @@
 """Runner (Process Runner) — actual OS subprocess run/stop/restart/list + log capture.
 
 Backend that actually performs the functions advertised by the runnerview screen (run/stop/restart/list, log tail).
-Separate from `spawnpoint.service.spawn()` (P-0005 instance registration protocol) — that one records
+Separate from `spawnpoint.service.spawn()` (instance registration) — that one records
 "this instance was created" in the database; this one actually starts/kills OS subprocesses.
 
 Per-process logs append stdout+stderr to log_dir/<id>.log.
