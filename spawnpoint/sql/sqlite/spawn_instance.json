@@ -1,0 +1,4 @@
+{
+  "insert": "spawn_instance_insert.sql",
+  "find_active_by_key": "spawn_instance_find_active_by_key.sql"
+}
