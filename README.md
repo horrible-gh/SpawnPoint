@@ -1,63 +1,74 @@
 # SpawnPoint
 
-A **entry point** module that creates (spawns) new task instances. It receives external
-requests to create new instances, validates them, registers qualified requests with unique
-identifiers, and returns handles (identifiers + status) to callers.
+SpawnPoint is a lightweight service for creating uniquely identified task instances and managing local subprocesses from a browser. The API, Runner UI, and process manager run together in one Python process on one port.
 
-## Structure
+![SpawnPoint dashboard](assets/images/SpawnPoint.png)
 
-```
-app/
-  main.py            Application entry point (read env settings → configure storage/auth → start server; serves API + UI + runner on one port)
-runnerview/
-  static/index.html  Runner UI (dynamic screen connected to actual /processes* API)
-  page.py            Static screen loader
-spawnpoint/
-  params.py          Parameters
-  clock.py           Time/timezone utility (display=KST, storage/comparison=fixed-width UTC ISO)
-  models.py          SpawnInstance model
-  storage.py         Registry — SQLite-backed store using sqloader, insert/query/seq + runner entry persistence
-  sql/
-    sqlite/            sqloader query files (spawn_instance.json / spawn_daily_seq.json / runner_entry.json + .sql)
-    migration/sqlite/  sqloader migration files (DDL)
-  validator.py       Validation layer
-  allocator.py       ID allocator
-  auth.py            Bearer token validator
-  results.py         Response builder
-  service.py         Top-level handler spawn()
-  runner.py          Runner (ProcessManager) — actual OS subprocess run/stop/restart/list/logging
-  http_api.py        HTTP adapter (POST /spawn + screen serving + /processes* runner routes)
-tests/
-  test_spawnpoint.py       Protocol 4 scenarios + boundary conditions (core unit tests)
-  test_http_integration.py Actual socket boot + end-to-end validation (+ healthz/405/413/404)
-  test_runnerview.py       Verify one server serves both screen (/) and API (/spawn)
-  test_runner.py           ProcessManager unit tests (start/stop/restart/list/logging)
-  test_runner_persistence.py  Server restart scenario (registrations survive, resume, shutdown cleanup)
-  test_processes_http.py   /processes* routes end-to-end validation
+## Features
+
+- Validates spawn requests and allocates collision-resistant instance IDs.
+- Deduplicates repeated requests within a configurable time window.
+- Persists spawn records and Runner commands in SQLite.
+- Starts, stops, restarts, updates, and deletes OS subprocess registrations.
+- Streams combined process output through a polling log API.
+- Serves the Runner UI and JSON API from the same HTTP server.
+- Supports optional Bearer-token authentication.
+
+## Quick start
+
+SpawnPoint requires Python and the dependencies listed in `requirements.txt`.
+
+```bash
+pip install -r requirements.txt
+python -m app.main
 ```
 
-The API server and UI run on **one process, one port**. `app/main.py` injects the static
-UI HTML from `runnerview` into `spawnpoint.http_api` to serve it on `GET /`.
+The server starts on `http://127.0.0.1:8091` by default:
 
-Component flow: `Intake → Validator → Allocator → Registrar → Responder`.
+- Runner UI: `GET /`
+- Health check: `GET /healthz`
+- Spawn API: `POST /spawn`
+- Process API: `/processes*`
 
-## Endpoints
+Authentication is disabled when `SPAWNPOINT_API_TOKENS` is unset. For a token-protected deployment:
 
-`POST /spawn` — `Content-Type: application/json`. In default local mode, no authentication
-headers required. When `SPAWNPOINT_API_TOKENS` is set, `Authorization: Bearer <token>`
-header is required.
+```bash
+SPAWNPOINT_API_TOKENS="tok-a,tok-b" \
+SPAWNPOINT_DB_PATH=/var/lib/spawnpoint.db \
+python -m app.main
+```
 
-Request:
+### Configuration
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SPAWNPOINT_HOST` | `127.0.0.1` | HTTP bind address |
+| `SPAWNPOINT_PORT` | `8091` | HTTP port |
+| `SPAWNPOINT_DB_PATH` | `spawnpoint.db` | SQLite database path |
+| `SPAWNPOINT_LOG_DIR` | `logs` | Runner process log directory |
+| `SPAWNPOINT_API_TOKENS` | unset | Comma-separated allowed Bearer tokens; auth is disabled when unset |
+| `SPAWNPOINT_KILL_CHILDREN_ON_EXIT` | `1` | Set to `0` to leave Runner processes alive when the server exits |
+
+Starting another server on an occupied port fails immediately with exit code 1 and an explanatory message.
+
+## Spawn API
+
+`POST /spawn` accepts JSON. When authentication is enabled, include `Authorization: Bearer <token>`.
+
 ```json
 {
   "requester": "user-a1b2c3",
   "kind": "session",
   "request_key": "req-7f3a90",
-  "options": { "label": "nightly-build", "ttl_seconds": 3600 }
+  "options": {
+    "label": "nightly-build",
+    "ttl_seconds": 3600
+  }
 }
 ```
 
-Success response:
+A successful response contains the allocated instance:
+
 ```json
 {
   "ok": true,
@@ -71,117 +82,116 @@ Success response:
 }
 ```
 
-- Validation failure → `{"ok": false, "error": {"code": "invalid_request", "field": "...", "message": "..."}}` (HTTP 400)
-- Auth failure → `code: "unauthorized"` (HTTP 401)
-- Duplicate request (same `request_key` arrives within `dedup_window` [300 seconds]) → returns existing instance with `"deduplicated": true`
-- Oversized body → `code: "payload_too_large"` (HTTP 413, limit 64KiB)
-- Storage failure → `code: "storage_error"` (HTTP 500)
+Instance IDs use `spwn_{YYYYMMDD}_{seq}{rand}`: a daily atomic sequence, zero-padded to four digits, followed by a six-digit hexadecimal suffix. The sequence and database primary key provide the uniqueness guarantees; collisions are retried.
 
-### Screen / Operational Routes
+Repeated `request_key` values received within the 300-second deduplication window return the existing instance with `"deduplicated": true`.
 
-- `GET /`, `GET /index.html` → Runner UI (HTML). Same port as API.
-- `GET /healthz` → `{"ok": true, "status": "healthy"}` (liveness check, no auth)
-- Unknown path → HTTP 404 `not_found`
-- Unsupported method (PUT/DELETE/PATCH) → HTTP 405 `method_not_allowed`
+### Error responses
 
-### Runner (Process Runner) Routes
+| Condition | HTTP status | Error code |
+| --- | ---: | --- |
+| Invalid request | 400 | `invalid_request` |
+| Missing or invalid token | 401 | `unauthorized` |
+| Request body over 64 KiB | 413 | `payload_too_large` |
+| Storage failure | 500 | `storage_error` |
+| Unknown route | 404 | `not_found` |
+| Unsupported method | 405 | `method_not_allowed` |
 
-In default local mode, no authentication required. When `SPAWNPOINT_API_TOKENS` is set,
-all require `Authorization: Bearer <token>`. These are separate from spawn() instance
-registration (above) — they manage actual OS subprocess lifecycle.
+Errors use this shape:
 
-- `POST /processes` — Start new process. Body: `{"cmd": "...", "label": "...", "cwd": "...", "env": {"K":"V"}}`
-  (`cmd` required, others optional. If `label` omitted, uses first token of `cmd`). Runs with `shell=True`
-  and appends stdout+stderr to `logs/<id>.log`.
-- `GET /processes` — List running/exited processes. Each item: `id, label, cmd, cwd, pid,
-  status(running|exited|killed|stopped), exit_code, started_at, ended_at`.
-- `POST /processes/<id>/stop` — Terminate process tree (POSIX: `killpg` SIGTERM→SIGKILL,
-  Windows: `taskkill /PID <pid> /T /F`).
-- `POST /processes/<id>/restart` — Stop if running, then restart with same id.
-- `GET /processes/<id>/logs?offset=<bytes>` — Return new log text after `offset` and
-  next `offset` (polling tail). UI polls every 1 second.
-- Non-existent id → HTTP 404 `not_found`.
-
-### Runner State Persistence
-
-Registration data (`id`, `label`, `cmd`, `cwd`, `env`) is stored in the `runner_entry`
-table of the same SQLite database, so **restarting the server no longer clears the
-command list**. On startup the entries are reloaded from the database.
-
-Live state is deliberately *not* restored. A recorded pid cannot be proven to still
-belong to that command after a restart (the OS reuses pid numbers), so restored entries
-come back as `status: "stopped"`, `pid: null` and are resumed with `POST /processes/<id>/run`
-(the ▶ button). Their previous log file stays readable because logs are keyed by id.
-
-By default processes started by the runner are **terminated when the server exits**, so a
-restart begins from a clean slate. On Windows this holds even for a hard kill (Task
-Manager, `taskkill /F`, closing the console window): children are assigned to a job object
-with `KILL_ON_JOB_CLOSE`. Set `SPAWNPOINT_KILL_CHILDREN_ON_EXIT=0` to let them keep
-running instead — but then the restarted server can no longer stop or restart them, since
-it only knows the registration, not the old process.
-
-Starting a second instance on a port that is already in use fails immediately with a
-message and exit code 1, rather than binding silently and answering nothing.
-
-## ID Format
-
-`spwn_{YYYYMMDD}_{seq}{rand}` — per-day sequence (atomic increment, 4-digit zero-padded) + 6-digit hex
-random suffix. Uniqueness first guaranteed by (date, seq), then by PK constraint,
-collision absorbed via retry path.
-
-## Running
-
-```bash
-# Start server (default local mode: no auth)
-python -m app.main
-#   UI: http://127.0.0.1:8091/
-#   API:      POST http://127.0.0.1:8091/spawn
-# → UI and API run together on one process, one port. No need to start two apps.
-
-# On deployment, set allowed tokens
-SPAWNPOINT_API_TOKENS="tok-a,tok-b" SPAWNPOINT_DB_PATH=/var/lib/spawnpoint.db python -m app.main
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "invalid_request",
+    "field": "requester",
+    "message": "..."
+  }
+}
 ```
 
-Environment variables: `SPAWNPOINT_HOST` (127.0.0.1), `SPAWNPOINT_PORT` (8091),
-`SPAWNPOINT_DB_PATH` (spawnpoint.db), `SPAWNPOINT_LOG_DIR` (logs, runner log directory),
-`SPAWNPOINT_API_TOKENS` (auth disabled if unset),
-`SPAWNPOINT_KILL_CHILDREN_ON_EXIT` (1; set to 0 to leave runner processes alive after exit).
+## Process Runner
+
+The dashboard uses the `/processes*` routes to manage real OS subprocesses. These routes follow the same authentication policy as `/spawn`.
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/processes` | List registered processes and their current state |
+| `POST` | `/processes` | Register and start a process |
+| `PUT` | `/processes/<id>` | Update a registration and start it |
+| `DELETE` | `/processes/<id>` | Delete a registration |
+| `POST` | `/processes/<id>/run` | Run a stopped registration |
+| `POST` | `/processes/<id>/stop` | Stop the process tree |
+| `POST` | `/processes/<id>/restart` | Restart the process with the same ID |
+| `GET` | `/processes/<id>/logs?offset=<bytes>` | Read log output from a byte offset |
+
+Start a process with a JSON body such as:
+
+```json
+{
+  "cmd": "python worker.py",
+  "label": "worker",
+  "cwd": "/srv/app",
+  "env": {
+    "MODE": "development"
+  }
+}
+```
+
+Only `cmd` is required. When `label` is omitted, SpawnPoint uses the first token of the command. Commands run with `shell=True`, and combined stdout and stderr are appended to `logs/<id>.log`. The UI polls logs once per second.
+
+Process-tree termination is platform-aware: POSIX uses process-group signals, while Windows uses `taskkill /T /F`. On Windows, child processes are also assigned to a job object with `KILL_ON_JOB_CLOSE` so the default cleanup policy still applies after a hard server shutdown.
+
+### Persistence and restart behavior
+
+Runner registrations (`id`, `label`, `cmd`, `cwd`, and `env`) are stored in the same SQLite database as spawn data and reloaded on startup. Log files remain readable because they are keyed by registration ID.
+
+Live process state is intentionally not restored. A saved PID may have been reused by the operating system, so reloaded entries start as `stopped` with `pid: null`. Use `POST /processes/<id>/run` or the dashboard Run button to start them again.
+
+By default, SpawnPoint terminates Runner children when the server exits. Setting `SPAWNPOINT_KILL_CHILDREN_ON_EXIT=0` leaves them running, but a restarted server cannot control those old processes because it restores registrations rather than unsafe PID ownership assumptions.
+
+## Architecture
+
+The spawn request pipeline is:
+
+```text
+Intake → Validator → Allocator → Registrar → Responder
+```
+
+```text
+app/
+  main.py                     Application entry point and server wiring
+runnerview/
+  page.py                     Static screen loader
+  static/index.html           Runner UI
+spawnpoint/
+  allocator.py                Instance ID allocation
+  auth.py                     Bearer-token validation
+  clock.py                    KST display and UTC storage utilities
+  http_api.py                 HTTP adapter and route handlers
+  models.py                   Spawn instance model
+  params.py                   Request parameters
+  results.py                  Response builders
+  runner.py                   Subprocess lifecycle management
+  service.py                  Top-level spawn handler
+  storage.py                  SQLite-backed registry
+  validator.py                Request validation
+  sql/                        sqloader queries and migrations
+tests/                        Unit and socket-level integration tests
+```
+
+`app/main.py` loads the static dashboard from `runnerview` and injects it into the HTTP adapter. The Runner and spawn registration domains share a server and database but remain separate in their service logic.
 
 ## Testing
+
+Run the full test suite with:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Storage layer uses sqloader (SQLite backend, pinned to `sqloader==0.2.18` in requirements.txt).
-Other modules use only Python standard library.
-Install: `pip install -r requirements.txt`
+The storage layer uses the SQLite backend from `sqloader==0.2.18`; the remaining application modules use the Python standard library.
 
-## Out of Scope (Deferred by Design)
+## Scope
 
-- State transitions after `created` (active/expired): instance lifecycle management module
-- Physical DB engine choice, retention/deletion policy for expired instances (deferred)
-- This implementation's reference storage is SQLite.
-
-## Runner (Process Runner) UI
-
-The screen served at `GET /` (`runnerview/static/index.html`) is wired to the actual `/processes*` API
-provided by `spawnpoint/runner.py`'s `ProcessManager`. When you enter a command on screen and run it,
-an actual OS subprocess starts. Stop/restart buttons terminate/restart the actual process tree. The log
-panel polls `logs/<id>.log` every 1 second. Default local mode enables all features immediately — no
-separate token input needed.
-
-The screen distinguishes a server it cannot reach from an error the server replied with: while the
-connection is down the header dot turns red and shows `Cannot reach the server - retrying in Ns`
-(polling backs off 2s → 30s and recovers automatically), instead of printing the browser's raw
-`Failed to fetch`. When a selected command no longer exists on the server — the usual case after a
-restart — the selection is released, so pressing ▶ Run registers what is in the input box rather than
-addressing an id that is gone.
-
-Arbitrary OS command run/stop/restart/list, log tail, POSIX killpg / Windows taskkill /T are
-a separate domain from spawn instance registration (above); `runner.py` operates independently
-from it.
-
-> Note: Previously this screen was a separate app (`app/runner_main.py`, port 8092),
-> but there was no reason to run two processes, so it was integrated into the main server (`app/main.py`).
-> The features advertised by the screen (actual run/stop/restart/logging) are now fully implemented.
+SpawnPoint currently provides instance creation and Runner process management. Instance lifecycle transitions after `created`, retention policies, expired-record deletion, and alternative database engines remain outside the current scope.
