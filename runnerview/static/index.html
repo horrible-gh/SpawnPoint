@@ -18,42 +18,43 @@
   body{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:14px;
     display:flex;flex-direction:column;overflow:hidden}
 
-  /* ── top bar ── */
-  header{display:flex;align-items:center;gap:12px;padding:10px 16px;
+  /* ── top bar: global actions live here — selection + Delete + [+ New] ── */
+  header{display:flex;align-items:center;gap:10px;padding:10px 16px;
     background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto}
-  .logo{font-weight:700;letter-spacing:.5px;display:flex;align-items:center;gap:8px}
+  .logo{font-weight:700;letter-spacing:.5px;display:flex;align-items:center;gap:8px;white-space:nowrap}
   .logo .dot{width:9px;height:9px;border-radius:50%;background:var(--run);
     box-shadow:0 0 8px var(--run)}
   .logo .dot.off{background:var(--kill);box-shadow:0 0 8px var(--kill)}
-  .logo small{color:var(--faint);font-weight:400;letter-spacing:0}
   header .spacer{flex:1}
   .status{font-size:12px;font-family:var(--mono);color:var(--faint)}
   .status.warn{color:var(--stop)}
   .status.ok{color:var(--run)}
 
+  /* the current selection is always visible in the header, so it's never
+     ambiguous which entry Delete would act on */
+  .selbar{display:flex;align-items:center;gap:8px;padding:4px 4px 4px 10px;
+    border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
+  .selbar.none{border-style:dashed;background:transparent}
+  .selname{font-family:var(--mono);font-size:12px;color:var(--txt);max-width:190px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .selbar.none .selname{color:var(--faint)}
+  .vsep{width:1px;height:22px;background:var(--line)}
 
-  /* ── new-run bar ── */
-  .newrun{display:flex;gap:8px;align-items:center;padding:10px 16px;
-    background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto;flex-wrap:wrap}
-  .newrun input{background:var(--bg);border:1px solid var(--line);border-radius:7px;
-    color:var(--txt);padding:8px 10px;font-family:var(--mono);font-size:13px;outline:none}
-  .newrun input:focus{border-color:var(--accent)}
-  .newrun .cmd{flex:1}
-  .newrun .cwd{width:210px}
-  .newrun .env{width:150px}
-  .newrun label{color:var(--faint);font-size:11px;margin-right:2px}
   .btn{border:0;border-radius:7px;padding:8px 14px;font-weight:600;cursor:pointer;
-    font-size:13px;font-family:var(--sans)}
-  .newrun .label{width:130px}
+    font-size:13px;font-family:var(--sans);white-space:nowrap}
+  .btn:disabled{opacity:.42;cursor:default}
+  .btn-primary{background:var(--accent);color:#04101f}
+  .btn-primary:hover:not(:disabled){filter:brightness(1.12)}
   .btn-run{background:var(--run);color:#04140a}
-  .btn-run:hover{filter:brightness(1.1)}
-  .btn:disabled{opacity:.5;cursor:default}
+  .btn-run:hover:not(:disabled){filter:brightness(1.1)}
+  .btn-ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}
+  .btn-ghost:hover:not(:disabled){background:#202934}
+  .btn-danger{background:transparent;color:#ff8a82;border:1px solid #682420}
+  .btn-danger:hover:not(:disabled){background:#3a1414}
+  .btn-sm{padding:6px 11px;font-size:12px}
   .err{color:var(--kill);font-size:12px;font-family:var(--mono)}
 
   /* ── main split ── */
-  .btn-new,.btn-save{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
-  .btn-save{color:var(--accent)}
-  .btn-delete{background:#3a1414;color:#ff8a82;border:1px solid #682420}
   main{flex:1;display:flex;flex-direction:column;min-height:0}
   .tablewrap{flex:1 1 55%;overflow:auto;min-height:0}
   table{width:100%;border-collapse:collapse;font-size:13px}
@@ -65,7 +66,8 @@
   tbody tr:hover{background:#12171e}
   tbody tr.sel{background:#132033;box-shadow:inset 3px 0 0 var(--accent)}
   .name{font-family:var(--mono);color:var(--txt)}
-  .name .sub{display:block;color:var(--faint);font-size:11px;margin-top:2px}
+  .name .sub{display:block;color:var(--faint);font-size:11px;margin-top:2px;
+    word-break:break-all}
   .pid,.up{font-family:var(--mono);color:var(--dim);font-size:12px}
   .chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;
     font-size:11px;font-weight:600;font-family:var(--mono)}
@@ -78,18 +80,23 @@
     background:var(--panel2);color:var(--dim);cursor:pointer;font-size:13px;
     display:grid;place-items:center}
   .op:hover{color:#fff}
+  .op.edit:hover{border-color:var(--accent);color:var(--accent)}
   .op.run:hover{border-color:var(--run);color:var(--run)}
   .op.stop:hover{border-color:var(--stop);color:var(--stop)}
   .op.restart:hover{border-color:var(--accent);color:var(--accent)}
   .op:disabled{opacity:.28;cursor:default}
-  .empty td{color:var(--faint);text-align:center;padding:24px;cursor:default}
-  .empty td:hover{background:transparent}
+
+  /* the empty state only shows one next action: [+ New command] */
+  .emptyrow td{padding:34px 14px;text-align:center;cursor:default}
+  .emptyrow td:hover{background:transparent}
+  .emptybox{display:inline-flex;flex-direction:column;align-items:center;gap:12px}
+  .emptybox p{margin:0;color:var(--faint)}
 
   /* ── log viewer ── */
   .logs{flex:1 1 45%;min-height:0;display:flex;flex-direction:column;
     border-top:1px solid var(--line);background:#0c0f13}
   .logbar{display:flex;align-items:center;gap:10px;padding:8px 14px;
-    background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto}
+    background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto;flex-wrap:wrap}
   .logbar .t{font-weight:600;font-family:var(--mono);font-size:13px}
   .logbar .t b{color:var(--accent)}
   .logbar .spacer{flex:1}
@@ -100,17 +107,80 @@
   .toggle.off .sw{background:#3a4250}
   .toggle.off .sw::after{right:auto;left:2px;background:#8b98a8}
   .maxlines{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12px}
-  .maxlines select{background:var(--bg);border:1px solid var(--line);border-radius:6px;
-    color:var(--txt);padding:4px 8px;font-family:var(--mono);font-size:12px;outline:none}
-  .maxlines select:focus{border-color:var(--accent)}
+  select,.dlg input,.dlg textarea{background:var(--bg);border:1px solid var(--line);
+    border-radius:7px;color:var(--txt);padding:6px 9px;font-family:var(--mono);
+    font-size:12px;outline:none}
+  select:focus,.dlg input:focus,.dlg textarea:focus{border-color:var(--accent)}
   .logview{flex:1;overflow:auto;padding:10px 14px;font-family:var(--mono);
     font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-all;color:#9aa7b6}
   .logview .placeholder{color:var(--faint)}
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-thumb{background:#2a333f;border-radius:6px}
   .footnote{padding:6px 16px;color:var(--faint);font-size:11px;background:var(--panel);
-    border-top:1px solid var(--line);display:flex;gap:16px;flex:0 0 auto}
+    border-top:1px solid var(--line);display:flex;gap:16px;flex:0 0 auto;flex-wrap:wrap}
   .footnote b{color:var(--dim)}
+
+  /* ── modal dialog (New / Edit command) ── */
+  .backdrop{position:fixed;inset:0;background:rgba(6,9,13,.72);backdrop-filter:blur(2px);
+    display:none;align-items:center;justify-content:center;padding:24px;z-index:40}
+  .backdrop.open{display:flex}
+  /* min-width:0 — flex item, so without it the content's min-content width
+     pushes the sheet wider than the viewport on narrow screens */
+  .dlg{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    width:640px;max-width:100%;max-height:100%;min-width:0;overflow:hidden;
+    display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+  /* clicking the backdrop never closes the dialog — it only nudges to signal that */
+  .dlg.nudge{animation:nudge .32s ease}
+  @keyframes nudge{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}
+    45%{transform:translateX(6px)}70%{transform:translateX(-3px)}}
+  /* kept off the global `header` selector so mobile header rules don't leak in */
+  .dlghead{display:flex;align-items:center;gap:8px;padding:14px 18px;
+    border-bottom:1px solid var(--line);flex:0 0 auto}
+  .dlghead .spacer{flex:1}
+  .dlg h2{margin:0;font-size:15px;font-weight:700;letter-spacing:.2px;min-width:0}
+  .x{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--dim);cursor:pointer;font-size:14px;
+    display:grid;place-items:center}
+  .x:hover{color:#fff;border-color:var(--kill)}
+  .dlgbody{padding:16px 18px;overflow:auto;display:flex;flex-direction:column;gap:14px;
+    min-width:0;min-height:0}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field > label{color:var(--dim);font-size:11.5px;font-weight:600;letter-spacing:.3px}
+  .field .hint{color:var(--faint);font-size:11px}
+  .field input,.field textarea{width:100%;padding:9px 11px;font-size:13px}
+  /* the command grows downward instead of scrolling out of reach sideways */
+  .field textarea.cmd{resize:none;overflow:hidden;min-height:40px;line-height:1.5;
+    white-space:pre-wrap;word-break:break-word}
+  .row2{display:flex;gap:12px}
+  .row2 .field{flex:1;min-width:0}
+  .dlgfoot{padding:13px 18px;border-top:1px solid var(--line);display:flex;
+    align-items:center;gap:9px;flex-wrap:wrap;flex:0 0 auto}
+  .dlgfoot .spacer{flex:1}
+  .dlgnote{color:var(--faint);font-size:11px;font-family:var(--mono);min-width:0}
+  .dlgnote.warn{color:var(--stop)}
+  .dlg.small{width:400px}
+  .dlgbody p{margin:0;line-height:1.6;color:var(--dim)}
+  .dlgbody p b{color:var(--txt);font-family:var(--mono)}
+
+  /* ── mobile ── */
+  @media (max-width:640px){
+    header{flex-wrap:wrap;gap:8px}
+    header .spacer{display:none}
+    .selbar{order:3;width:100%}
+    .selname{max-width:none;flex:1}
+    header > .btn-primary{order:2;margin-left:auto}
+    .backdrop{padding:0}
+    .dlg{width:100%;height:100%;border:0;border-radius:0;max-height:none}
+    .row2{flex-direction:column}
+    /* the note takes its own line, the 3 buttons split the rest evenly */
+    .dlgfoot .dlgnote{flex-basis:100%}
+    .dlgfoot .spacer{display:none}
+    .dlgfoot .btn{flex:1}
+    th.col-pid,td.col-pid,th.col-up,td.col-up{display:none}
+    /* fit the 4th (✎) op button on one line on narrow screens too */
+    .ops{gap:4px}
+    .op{width:27px;height:27px;font-size:12px}
+  }
 </style>
 </head>
 <body>
@@ -120,32 +190,27 @@
   <span class="status" id="connStatus"></span>
   <div class="spacer"></div>
   <span class="err" id="globalErr"></span>
-
+  <div class="selbar none" id="selBar">
+    <span class="selname" id="selName">No selection</span>
+    <div class="vsep"></div>
+    <button class="btn btn-danger btn-sm" id="deleteBtn" disabled>Delete</button>
+  </div>
+  <button class="btn btn-primary" id="newBtn">+ New</button>
 </header>
-
-<div class="newrun">
-  <label>Label</label>
-  <input class="label" id="labelInput" placeholder="Display name (optional)">
-  <label>Command</label>
-  <input class="cmd" id="cmdInput" placeholder="Command to run… (example: python -m http.server 8200)">
-  <label>cwd</label>
-  <input class="cwd" id="cwdInput" placeholder="Working directory (optional)">
-  <label>env</label>
-  <input class="env" id="envInput" placeholder="KEY=VAL,KEY2=VAL2 (optional)">
-  <button class="btn btn-run" id="runBtn">▶ Run</button>
-  <button class="btn btn-save" id="saveBtn" disabled>Save Changes</button>
-  <button class="btn btn-delete" id="deleteBtn" disabled>Delete</button>
-  <button class="btn btn-new" id="newBtn">New Command</button>
-</div>
 
 <main>
   <div class="tablewrap">
     <table>
       <thead><tr>
-        <th style="width:34%">Name / Command</th><th>Status</th><th>PID</th><th>Uptime</th><th style="width:120px">Actions</th>
+        <th style="width:38%">Name / Command</th><th>Status</th>
+        <th class="col-pid">PID</th><th class="col-up">Uptime</th>
+        <th style="width:160px">Actions</th>
       </tr></thead>
       <tbody id="procBody">
-        <tr class="empty"><td colspan="5">No registered commands.</td></tr>
+        <tr class="emptyrow"><td colspan="5"><div class="emptybox">
+          <p>No registered commands.</p>
+          <button class="btn btn-primary" data-act="new">+ New command</button>
+        </div></td></tr>
       </tbody>
     </table>
   </div>
@@ -167,12 +232,64 @@
       </label>
       <span class="toggle on" id="autoscrollToggle"><span class="sw"></span>Auto-scroll</span>
     </div>
-    <div class="logview" id="logView"><div class="placeholder">Select a process on the left to view logs.</div></div>
+    <div class="logview" id="logView"><div class="placeholder">Select a process above to view logs.</div></div>
   </div>
 </main>
 
+<!-- New / Edit dialog. Backdrop click never closes it — only ✕ / Cancel / Esc do. -->
+<div class="backdrop" id="formBackdrop">
+  <div class="dlg" id="formDlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+    <div class="dlghead">
+      <h2 id="dlgTitle">New command</h2>
+      <div class="spacer"></div>
+      <button class="x" id="dlgClose" title="Close">✕</button>
+    </div>
+    <div class="dlgbody">
+      <div class="field">
+        <label for="fLabel">Label</label>
+        <input id="fLabel" placeholder="Display name (optional)">
+      </div>
+      <div class="field">
+        <label for="fCmd">Command</label>
+        <textarea id="fCmd" class="cmd" rows="1" placeholder="Command to run… (example: python -m http.server 8200)"></textarea>
+        <span class="hint">One line. Long commands grow downward instead of scrolling sideways.</span>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="fCwd">Working directory</label>
+          <input id="fCwd" placeholder="Working directory (optional)">
+        </div>
+        <div class="field">
+          <label for="fEnv">Environment</label>
+          <input id="fEnv" placeholder="KEY=VAL,KEY2=VAL2 (optional)">
+        </div>
+      </div>
+    </div>
+    <div class="dlgfoot">
+      <span class="dlgnote" id="dlgNote">Clicking the backdrop does not close this</span>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" id="dlgCancel">Cancel</button>
+      <button class="btn btn-ghost" id="dlgSave">Save</button>
+      <button class="btn btn-run" id="dlgSaveRun">Save &amp; Run</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm dialog (delete / discard) -->
+<div class="backdrop" id="confirmBackdrop">
+  <div class="dlg small" id="confirmDlg" role="dialog" aria-modal="true">
+    <div class="dlghead"><h2 id="confirmTitle">Delete command</h2></div>
+    <div class="dlgbody"><p id="confirmBody"></p></div>
+    <div class="dlgfoot">
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" id="confirmNo">Cancel</button>
+      <button class="btn btn-danger" id="confirmYes">Delete</button>
+    </div>
+  </div>
+</div>
+
 <div class="footnote">
-  <span><b>API</b> POST /processes · /processes/&lt;id&gt;/stop · /restart · GET /processes</span>
+  <span><b>API</b> POST /processes · PUT /processes/&lt;id&gt; · /processes/&lt;id&gt;/run · /stop · /restart · GET /processes</span>
   <span><b>Logs</b> polling tail (1s) · GET /processes/&lt;id&gt;/logs?offset=N · logs/&lt;id&gt;.log</span>
   <span><b>Persistence</b> Commands survive a server restart · restored as stopped (press ▶ to resume)</span>
   <span><b>Termination</b> POSIX killpg(SIGTERM→SIGKILL) / Windows taskkill /T /F (children too)</span>
@@ -202,7 +319,6 @@
   }
 
   var state = {
-
     processes: [],
     selectedId: null,
     logOffset: 0,
@@ -216,17 +332,17 @@
     logPending: "",
   };
 
-  var el = {
+  // Dialog-only state: which entry (if any) is being edited, and whether the
+  // form has unsaved edits (gates the discard confirmation on close).
+  var dlg = { mode: "new", editingId: null, dirty: false };
+  var confirmAction = null;
 
+  var el = {
     globalErr: document.getElementById("globalErr"),
     connDot: document.getElementById("connDot"),
     connStatus: document.getElementById("connStatus"),
-    labelInput: document.getElementById("labelInput"),
-    cmdInput: document.getElementById("cmdInput"),
-    cwdInput: document.getElementById("cwdInput"),
-    envInput: document.getElementById("envInput"),
-    runBtn: document.getElementById("runBtn"),
-    saveBtn: document.getElementById("saveBtn"),
+    selBar: document.getElementById("selBar"),
+    selName: document.getElementById("selName"),
     deleteBtn: document.getElementById("deleteBtn"),
     newBtn: document.getElementById("newBtn"),
     procBody: document.getElementById("procBody"),
@@ -234,9 +350,38 @@
     logView: document.getElementById("logView"),
     autoscrollToggle: document.getElementById("autoscrollToggle"),
     maxLinesSelect: document.getElementById("maxLinesSelect"),
+    formBackdrop: document.getElementById("formBackdrop"),
+    formDlg: document.getElementById("formDlg"),
+    dlgTitle: document.getElementById("dlgTitle"),
+    dlgClose: document.getElementById("dlgClose"),
+    dlgCancel: document.getElementById("dlgCancel"),
+    dlgSave: document.getElementById("dlgSave"),
+    dlgSaveRun: document.getElementById("dlgSaveRun"),
+    dlgNote: document.getElementById("dlgNote"),
+    fLabel: document.getElementById("fLabel"),
+    fCmd: document.getElementById("fCmd"),
+    fCwd: document.getElementById("fCwd"),
+    fEnv: document.getElementById("fEnv"),
+    confirmBackdrop: document.getElementById("confirmBackdrop"),
+    confirmDlg: document.getElementById("confirmDlg"),
+    confirmTitle: document.getElementById("confirmTitle"),
+    confirmBody: document.getElementById("confirmBody"),
+    confirmNo: document.getElementById("confirmNo"),
+    confirmYes: document.getElementById("confirmYes"),
   };
   el.maxLinesSelect.value = String(state.maxLines);
 
+  // Auto-grow the command textarea so long commands wrap into view instead of
+  // scrolling horizontally out of reach (mobile touch-drag cannot scroll a
+  // native <input> the way a mouse drag can).
+  function autoGrowCmd(){
+    el.fCmd.style.height = "auto";
+    el.fCmd.style.height = el.fCmd.scrollHeight + "px";
+  }
+  el.fCmd.addEventListener("input", autoGrowCmd);
+  el.fCmd.addEventListener("keydown", function(ev){
+    if (ev.key === "Enter") ev.preventDefault();
+  });
 
   function showError(msg){
     el.globalErr.textContent = msg || "";
@@ -312,6 +457,15 @@
     return null;
   }
 
+  // Splice a freshly POST/PUT-returned process into the local list so it can be
+  // selected immediately, without waiting on the next poll to reconcile.
+  function upsertProcess(p){
+    for (var i = 0; i < state.processes.length; i++){
+      if (state.processes[i].id === p.id){ state.processes[i] = p; return; }
+    }
+    state.processes.push(p);
+  }
+
   function parseEnv(text){
     var env = {};
     (text || "").split(",").forEach(function(pair){
@@ -325,30 +479,6 @@
   }
   function envText(env){
     return Object.keys(env || {}).map(function(k){ return k + "=" + env[k]; }).join(",");
-  }
-
-  function formPayload(){
-    return {
-      label: el.labelInput.value.trim() || undefined,
-      cmd: el.cmdInput.value.trim(),
-      cwd: el.cwdInput.value.trim() || undefined,
-      env: parseEnv(el.envInput.value),
-    };
-  }
-
-  function clearEditor(resetLog){
-    state.selectedId = null;
-    el.labelInput.value = "";
-    el.cmdInput.value = "";
-    el.cwdInput.value = "";
-    el.envInput.value = "";
-    el.saveBtn.disabled = true;
-    el.deleteBtn.disabled = true;
-    renderProcesses();
-    if (resetLog){
-      el.logTitle.innerHTML = "Logs · <b>—</b>";
-      el.logView.innerHTML = '<div class="placeholder">Select a process on the left to view logs.</div>';
-    }
   }
 
   function fmtDuration(ms){
@@ -368,50 +498,53 @@
     return '<span class="chip c-kill">killed</span>';
   }
 
-  function renderProcesses(){
-    if (!state.processes.length){
-      el.procBody.innerHTML = '<tr class="empty"><td colspan="5">No registered commands.</td></tr>';
-      return;
-    }
-    var rows = state.processes.map(function(p){
-      var running = p.status === "running";
-      var up = running && p.started_at ? fmtDuration(Date.now() - Date.parse(p.started_at)) : "—";
-      var sel = p.id === state.selectedId ? " sel" : "";
-      return (
-        '<tr class="' + sel.trim() + '" data-id="' + p.id + '">' +
-        '<td class="name">' + escapeHtml(p.label) + '<span class="sub">' + escapeHtml(p.cmd) + '</span></td>' +
-        '<td>' + statusChip(p) + '</td>' +
-        '<td class="pid">' + (p.pid != null && running ? p.pid : "—") + '</td>' +
-        '<td class="up">' + up + '</td>' +
-        '<td><div class="ops">' +
-          '<button class="op run" data-act="run" ' + (running ? "disabled" : "") + '>▶</button>' +
-          '<button class="op stop" data-act="stop" ' + (running ? "" : "disabled") + '>■</button>' +
-          '<button class="op restart" data-act="restart">↻</button>' +
-        '</div></td>' +
-        '</tr>'
-      );
-    });
-    el.procBody.innerHTML = rows.join("");
-  }
-
   function escapeHtml(s){
     return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
       return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
     });
   }
 
-  function refreshProcesses(){
+  function renderProcesses(){
+    if (!state.processes.length){
+      el.procBody.innerHTML =
+        '<tr class="emptyrow"><td colspan="5"><div class="emptybox">' +
+        '<p>No registered commands.</p>' +
+        '<button class="btn btn-primary" data-act="new">+ New command</button>' +
+        '</div></td></tr>';
+    } else {
+      el.procBody.innerHTML = state.processes.map(function(p){
+        var running = p.status === "running";
+        var up = running && p.started_at ? fmtDuration(Date.now() - Date.parse(p.started_at)) : "—";
+        return '<tr class="' + (p.id === state.selectedId ? "sel" : "") + '" data-id="' + p.id + '">' +
+          '<td class="name">' + escapeHtml(p.label) + '<span class="sub">' + escapeHtml(p.cmd) + '</span></td>' +
+          '<td>' + statusChip(p) + '</td>' +
+          '<td class="pid col-pid">' + (p.pid != null && running ? p.pid : "—") + '</td>' +
+          '<td class="up col-up">' + up + '</td>' +
+          '<td><div class="ops">' +
+            '<button class="op edit" data-act="edit" title="Edit this command">✎</button>' +
+            '<button class="op run" data-act="run" title="Run / resume this command" ' + (running ? "disabled" : "") + '>▶</button>' +
+            '<button class="op stop" data-act="stop" title="Stop" ' + (running ? "" : "disabled") + '>■</button>' +
+            '<button class="op restart" data-act="restart" title="Restart">↻</button>' +
+          '</div></td></tr>';
+      }).join("");
+    }
+    var sel = findProcess(state.selectedId);
+    el.selName.textContent = sel ? sel.label : "No selection";
+    el.selBar.classList.toggle("none", !sel);
+    el.deleteBtn.disabled = !sel;
+  }
 
+  function refreshProcesses(){
     return api("/processes").then(function(data){
       state.processes = data.processes;
       markOnline();
       showError("");
       // A selection can outlive the entry it points at (server restarted with a fresh
-      // id space, or the entry was deleted elsewhere). Drop it, otherwise Run and the
-      // log poller keep addressing an id the server no longer knows.
+      // id space, or the entry was deleted elsewhere). Drop it, otherwise the row
+      // actions and the log poller keep addressing an id the server no longer knows.
       if (state.selectedId && !findProcess(state.selectedId)){
-        clearEditor(true);
-        flashStatus("The selected command is gone - enter a command and press Run.", "warn", 6000);
+        clearSelection(true);
+        flashStatus("The selected command is gone.", "warn", 6000);
       }
       renderProcesses();
       var sel = findProcess(state.selectedId);
@@ -422,16 +555,19 @@
     });
   }
 
+  function clearSelection(resetLog){
+    state.selectedId = null;
+    renderProcesses();
+    if (resetLog){
+      el.logTitle.innerHTML = "Logs · <b>—</b>";
+      el.logView.innerHTML = '<div class="placeholder">Select a process above to view logs.</div>';
+    }
+  }
+
   function selectProcess(id){
-    var p = state.processes.find(function(item){ return item.id === id; });
+    var p = findProcess(id);
     if (!p) return;
     state.selectedId = id;
-    el.labelInput.value = p.label || "";
-    el.cmdInput.value = p.cmd || "";
-    el.cwdInput.value = p.cwd || "";
-    el.envInput.value = envText(p.env);
-    el.saveBtn.disabled = false;
-    el.deleteBtn.disabled = false;
     state.logOffset = 0;
     state.logLines = [];
     state.logPending = "";
@@ -486,13 +622,191 @@
       if (e.status === 404){
         // The entry vanished (server restarted, or it was deleted). Stop polling a
         // dead id instead of blinking a 404 into the error banner every second.
-        if (id === state.selectedId) clearEditor(true);
+        if (id === state.selectedId) clearSelection(true);
         return;
       }
       showError(e.message);
     });
   }
 
+  /* ── New / Edit dialog ──
+     Registering an entry always starts it (the server has no "stopped" register-only
+     mode), so the New dialog offers only Save & Run. Editing an existing entry can
+     save settings without restarting it (Save) or save and restart it immediately
+     (Save & Restart) — the server applies edited settings on the next restart either way. */
+  function openForm(mode, p){
+    dlg.mode = mode;
+    dlg.editingId = p ? p.id : null;
+    dlg.dirty = false;
+    el.dlgTitle.textContent = mode === "edit" ? "Edit command" : "New command";
+    el.fLabel.value = p ? (p.label || "") : "";
+    el.fCmd.value = p ? (p.cmd || "") : "";
+    el.fCwd.value = p ? (p.cwd || "") : "";
+    el.fEnv.value = p ? envText(p.env) : "";
+    el.dlgSave.style.display = mode === "edit" ? "" : "none";
+    el.dlgSaveRun.textContent = mode === "edit" ? "Save & Restart" : "Save & Run";
+    setNote("Clicking the backdrop does not close this", false);
+    el.formBackdrop.classList.add("open");
+    autoGrowCmd();
+    el.fCmd.focus();
+  }
+  function setNote(msg, warn){
+    el.dlgNote.textContent = msg;
+    el.dlgNote.classList.toggle("warn", !!warn);
+  }
+  function closeForm(){
+    el.formBackdrop.classList.remove("open");
+    dlg.dirty = false;
+  }
+  // Every close path funnels through here: if the fields were edited, confirm once
+  // before discarding (an accidental Esc or ✕ should not silently drop typed input).
+  function requestClose(){
+    if (!dlg.dirty){ closeForm(); return; }
+    askConfirm("Discard changes", "This will close <b>without saving</b> your changes.", "Discard", function(){
+      closeForm();
+    });
+  }
+  function nudge(){
+    el.formDlg.classList.remove("nudge");
+    void el.formDlg.offsetWidth;
+    el.formDlg.classList.add("nudge");
+    setNote("Clicking the backdrop does not close this dialog — use ✕ / Cancel / Esc", true);
+  }
+
+  function askConfirm(title, bodyHtml, yesLabel, onYes){
+    el.confirmTitle.textContent = title;
+    el.confirmBody.innerHTML = bodyHtml;
+    el.confirmYes.textContent = yesLabel;
+    confirmAction = onYes;
+    el.confirmBackdrop.classList.add("open");
+  }
+  function closeConfirm(){
+    el.confirmBackdrop.classList.remove("open");
+    confirmAction = null;
+  }
+
+  function saveForm(alsoRun){
+    var cmd = el.fCmd.value.trim();
+    if (!cmd){ setNote("Enter a command.", true); el.fCmd.focus(); return; }
+    var payload = {
+      label: el.fLabel.value.trim() || undefined,
+      cmd: cmd,
+      cwd: el.fCwd.value.trim() || undefined,
+      env: parseEnv(el.fEnv.value),
+    };
+    el.dlgSave.disabled = true;
+    el.dlgSaveRun.disabled = true;
+    var request;
+    if (dlg.mode === "edit"){
+      request = api("/processes/" + dlg.editingId, { method: "PUT", body: payload })
+        .then(function(putData){
+          return alsoRun ? api("/processes/" + dlg.editingId + "/restart", { method: "POST" }) : putData;
+        })
+        .then(function(data){
+          closeForm();
+          showError("");
+          flashStatus(alsoRun ? "Saved · restarted" : "Saved", "ok", 3000);
+          upsertProcess(data.process);
+          selectProcess(dlg.editingId);
+          refreshProcesses();
+        });
+    } else {
+      request = api("/processes", { method: "POST", body: payload }).then(function(data){
+        closeForm();
+        showError("");
+        flashStatus("Registered · running", "ok", 3000);
+        upsertProcess(data.process);
+        selectProcess(data.process.id);
+        refreshProcesses();
+      });
+    }
+    request.catch(function(e){ setNote(e.message, true); })
+      .then(function(){ el.dlgSave.disabled = false; el.dlgSaveRun.disabled = false; });
+  }
+
+  /* ── wiring ── */
+  el.newBtn.addEventListener("click", function(){ openForm("new", null); });
+
+  el.deleteBtn.addEventListener("click", function(){
+    var p = findProcess(state.selectedId);
+    if (!p) return;
+    askConfirm("Delete command", "<b>" + escapeHtml(p.label) + "</b> and its logs will be deleted.", "Delete", function(){
+      var id = p.id;
+      api("/processes/" + id, { method: "DELETE" })
+        .then(function(){
+          clearSelection(true);
+          showError("");
+          refreshProcesses();
+        })
+        .catch(function(e){ showError(e.message); });
+    });
+  });
+
+  el.procBody.addEventListener("click", function(ev){
+    if (ev.target.getAttribute("data-act") === "new"){ openForm("new", null); return; }
+    var btn = ev.target.closest("button.op");
+    var row = ev.target.closest("tr[data-id]");
+    if (!row) return;
+    var id = row.getAttribute("data-id");
+    var p = findProcess(id);
+    if (!p) return;
+    if (btn){
+      ev.stopPropagation();
+      if (btn.disabled) return;
+      var act = btn.getAttribute("data-act");
+      if (act === "edit"){
+        selectProcess(id);
+        openForm("edit", p);
+        return;
+      }
+      api("/processes/" + id + "/" + act, { method: "POST" })
+        .then(function(){
+          showError("");
+          if (id === state.selectedId) pollLog(false);
+          refreshProcesses();
+        })
+        .catch(function(e){ showError(e.message); });
+      return;
+    }
+    selectProcess(id);
+  });
+
+  [el.fLabel, el.fCmd, el.fCwd, el.fEnv].forEach(function(input){
+    input.addEventListener("input", function(){
+      dlg.dirty = true;
+      setNote("Clicking the backdrop does not close this", false);
+    });
+  });
+
+  el.dlgClose.addEventListener("click", requestClose);
+  el.dlgCancel.addEventListener("click", requestClose);
+  el.dlgSave.addEventListener("click", function(){ saveForm(false); });
+  el.dlgSaveRun.addEventListener("click", function(){ saveForm(true); });
+
+  // The core rule of this dialog: a backdrop click never closes it.
+  el.formBackdrop.addEventListener("mousedown", function(ev){
+    if (ev.target === el.formBackdrop){ ev.preventDefault(); nudge(); }
+  });
+  el.confirmBackdrop.addEventListener("mousedown", function(ev){
+    if (ev.target === el.confirmBackdrop){
+      ev.preventDefault();
+      el.confirmDlg.classList.remove("nudge");
+      void el.confirmDlg.offsetWidth;
+      el.confirmDlg.classList.add("nudge");
+    }
+  });
+  el.confirmNo.addEventListener("click", closeConfirm);
+  el.confirmYes.addEventListener("click", function(){
+    var fn = confirmAction;
+    closeConfirm();
+    if (fn) fn();
+  });
+
+  document.addEventListener("keydown", function(ev){
+    if (ev.key !== "Escape") return;
+    if (el.confirmBackdrop.classList.contains("open")){ closeConfirm(); return; }
+    if (el.formBackdrop.classList.contains("open")) requestClose();
+  });
 
   el.autoscrollToggle.addEventListener("click", function(){
     state.autoscroll = !state.autoscroll;
@@ -509,78 +823,6 @@
       renderLogView();
       if (state.autoscroll) el.logView.scrollTop = el.logView.scrollHeight;
     }
-  });
-
-  el.runBtn.addEventListener("click", function(){
-    var cmd = el.cmdInput.value.trim();
-    if (!cmd){ showError("Enter a command."); return; }
-    el.runBtn.disabled = true;
-    // Resume the selected entry only while the server still has it. After a restart the
-    // old id is gone, and reusing it would 404 forever while the typed command is ignored.
-    var live = findProcess(state.selectedId);
-    if (!live) state.selectedId = null;
-    var request = live ? api("/processes/" + live.id + "/run", { method: "POST" })
-      : api("/processes", {
-      method: "POST",
-      body: formPayload(),
-    });
-    request.then(function(data){
-      showError("");
-      state.selectedId = data.process.id;
-      el.saveBtn.disabled = false;
-      el.deleteBtn.disabled = false;
-      refreshProcesses();
-    }).catch(function(e){ showError(e.message); }).then(function(){ el.runBtn.disabled = false; });
-  });
-
-  el.newBtn.addEventListener("click", function(){
-    clearEditor(true);
-    showError("");
-  });
-
-  el.saveBtn.addEventListener("click", function(){
-    if (!state.selectedId) return;
-    var payload = formPayload();
-    if (!payload.cmd){ showError("Enter a command."); return; }
-    el.saveBtn.disabled = true;
-    api("/processes/" + state.selectedId, { method: "PUT", body: payload })
-      .then(function(){
-        showError("");
-        refreshProcesses();
-      })
-      .catch(function(e){ showError(e.message); })
-      .then(function(){ el.saveBtn.disabled = false; });
-  });
-
-  el.deleteBtn.addEventListener("click", function(){
-    if (!state.selectedId) return;
-    if (!window.confirm("Delete this command and its logs?")) return;
-    var id = state.selectedId;
-    el.deleteBtn.disabled = true;
-    api("/processes/" + id, { method: "DELETE" })
-      .then(function(){
-        clearEditor(true);
-        showError("");
-        refreshProcesses();
-      })
-      .catch(function(e){ showError(e.message); el.deleteBtn.disabled = false; });
-  });
-
-  el.procBody.addEventListener("click", function(ev){
-    var btn = ev.target.closest("button.op");
-    var row = ev.target.closest("tr[data-id]");
-    if (!row) return;
-    var id = row.getAttribute("data-id");
-    if (btn){
-      ev.stopPropagation();
-      if (btn.disabled) return;
-      var act = btn.getAttribute("data-act");
-      api("/processes/" + id + "/" + act, { method: "POST" })
-        .then(refreshProcesses)
-        .catch(function(e){ showError(e.message); });
-      return;
-    }
-    selectProcess(id);
   });
 
   // Self-scheduling instead of setInterval: the delay grows while the server is
