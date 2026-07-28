@@ -78,10 +78,10 @@ const migrationsTable = "migrations"
 //
 // The indentation is not an accident and should not be tidied. SQLite stores
 // the text of a CREATE statement verbatim in its schema, so this is what the
-// current implementation's copy looks like on disk (sqloader migrator.py
+// deployed implementation's copy looks like on disk (sqloader's
 // create_migrations_table). Reproducing it byte for byte is what lets the
 // schema of a database built by this code be compared against one built by the
-// current implementation and come out identical — which is the check 0008-L 6.3
+// deployed implementation and come out identical — which is the check 0008-L 6.3
 // item 4 asks for. 0004-NR R2 requires the definition to be the same; this
 // makes "the same" mechanically verifiable rather than a matter of reading.
 const migrationsDDL = `

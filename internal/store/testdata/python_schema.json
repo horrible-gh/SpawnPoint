@@ -1,4 +1,5 @@
 {
+  "_note": "Captured from the previous Python implementation, which has been removed. This file is a fixed contract value and is no longer regenerated.",
   "_generator": "tools/pyref/dump_schema.py",
   "_python": "3.14.2",
   "_sqlite": "3.50.4",

@@ -13,8 +13,9 @@ import (
 	"spawnpoint/internal/dialect"
 )
 
-// schemaObject mirrors one row of the reference dump produced by
-// tools/pyref/dump_schema.py.
+// schemaObject mirrors one row of the reference dump captured from the previous
+// implementation. The capture tool is gone with that implementation; the dump in
+// testdata is a fixed contract value and is not regenerated.
 type schemaObject struct {
 	Type    string  `json:"type"`
 	Name    string  `json:"name"`
@@ -30,9 +31,9 @@ type schemaDump struct {
 // TestMigrateProducesThePythonSchema is item 4 of 0008-L 6.3.
 //
 // The reference is not a description of the schema, it is the schema the
-// current implementation actually produced, captured by running it
-// (tools/pyref/dump_schema.py). Comparing against it means the check covers
-// things nobody thought to assert: the exact text of every constraint, the
+// previous implementation actually produced, captured by running it against a
+// deployed database. Comparing against it means the check covers things nobody
+// thought to assert: the exact text of every constraint, the
 // partial index predicate, the column defaults, and the definition of the
 // history table itself.
 func TestMigrateProducesThePythonSchema(t *testing.T) {
@@ -264,7 +265,7 @@ func loadReference(t *testing.T) schemaDump {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("testdata", "python_schema.json"))
 	if err != nil {
-		t.Fatalf("read reference: %v (regenerate with tools/pyref/dump_schema.py)", err)
+		t.Fatalf("read reference: %v (testdata/python_schema.json is a fixed contract value; restore it from history)", err)
 	}
 	var dump schemaDump
 	if err := json.Unmarshal(raw, &dump); err != nil {

@@ -1,6 +1,6 @@
 # SpawnPoint
 
-SpawnPoint is a lightweight service for creating uniquely identified task instances and managing local subprocesses from a browser. The API, Runner UI, and process manager run together in one Python process on one port.
+SpawnPoint is a lightweight service for creating uniquely identified task instances and managing local subprocesses from a browser. The API, Runner UI, and process manager ship as **one Go executable** serving one port; the dashboard, SQL queries and migration scripts are compiled into it, so `spawnpoint.exe` is the only runtime artifact. Nothing else has to be installed on the target machine.
 
 ![SpawnPoint dashboard](assets/images/SpawnPoint.png)
 
@@ -13,14 +13,16 @@ SpawnPoint is a lightweight service for creating uniquely identified task instan
 - Streams combined process output through a polling log API.
 - Serves the Runner UI and JSON API from the same HTTP server.
 - Supports optional Bearer-token authentication.
+- Runs in console mode or under the Windows service control manager, from the same executable.
 
 ## Quick start
 
-SpawnPoint requires Python and the dependencies listed in `requirements.txt`.
+SpawnPoint requires Go 1.26 or later to build. It has no runtime dependency beyond the produced executable.
 
-```bash
-pip install -r requirements.txt
-python -m app.main
+```powershell
+$env:CGO_ENABLED = '0'
+go build -trimpath -o dist/spawnpoint.exe ./cmd/spawnpoint
+.\dist\spawnpoint.exe
 ```
 
 The server starts on `http://127.0.0.1:8091` by default:
@@ -30,12 +32,24 @@ The server starts on `http://127.0.0.1:8091` by default:
 - Spawn API: `POST /spawn`
 - Process API: `/processes*`
 
+Open the UI, enter a command line (optionally a name, working directory and environment variables) and register it — it starts immediately, and Run / Stop / Restart and the log view manage it from there. `Ctrl+C` stops the server.
+
+The program has no command-line options; everything is configured through environment variables. Set them before starting:
+
+```powershell
+$env:SPAWNPOINT_HOST = '127.0.0.1'
+$env:SPAWNPOINT_PORT = '8091'
+$env:SPAWNPOINT_DB_PATH = 'C:\ProgramData\SpawnPoint\spawnpoint.db'
+$env:SPAWNPOINT_LOG_DIR = 'C:\ProgramData\SpawnPoint\logs'
+.\dist\spawnpoint.exe
+```
+
 Authentication is disabled when `SPAWNPOINT_API_TOKENS` is unset. For a token-protected deployment:
 
-```bash
-SPAWNPOINT_API_TOKENS="tok-a,tok-b" \
-SPAWNPOINT_DB_PATH=/var/lib/spawnpoint.db \
-python -m app.main
+```powershell
+$env:SPAWNPOINT_API_TOKENS = 'tok-a,tok-b'
+$env:SPAWNPOINT_DB_PATH = 'C:\ProgramData\SpawnPoint\spawnpoint.db'
+.\dist\spawnpoint.exe
 ```
 
 ### Configuration
@@ -49,7 +63,11 @@ python -m app.main
 | `SPAWNPOINT_API_TOKENS` | unset | Comma-separated allowed Bearer tokens; auth is disabled when unset |
 | `SPAWNPOINT_KILL_CHILDREN_ON_EXIT` | `1` | Set to `0` to leave Runner processes alive when the server exits |
 
-Starting another server on an occupied port fails immediately with exit code 1 and an explanatory message.
+Relative database and log paths resolve against the working directory, which is why a service registration must use absolute ones.
+
+Starting another server on an occupied port fails immediately with exit code 1 and an explanatory message. Exit codes are 0 for a normal stop, 1 for a retryable start/runtime failure, and 2 for an unrecoverable configuration or embedded asset defect.
+
+Startup resolves configuration, opens the operations log, migrates the existing SQLite database, restores registered commands as stopped, binds the port and serves the complete API.
 
 ## Spawn API
 
@@ -129,18 +147,18 @@ Start a process with a JSON body such as:
 
 ```json
 {
-  "cmd": "python worker.py",
+  "cmd": "worker.exe --mode fast",
   "label": "worker",
-  "cwd": "/srv/app",
+  "cwd": "C:\\srv\\app",
   "env": {
     "MODE": "development"
   }
 }
 ```
 
-Only `cmd` is required. When `label` is omitted, SpawnPoint uses the first token of the command. Commands run with `shell=True`, and combined stdout and stderr are appended to `logs/<id>.log`. The UI polls logs once per second.
+Only `cmd` is required. When `label` is omitted, SpawnPoint uses the first token of the command. Commands run through the OS shell, and combined stdout and stderr are appended to `<SPAWNPOINT_LOG_DIR>/<id>.log`. The UI polls logs once per second.
 
-Process-tree termination is platform-aware: POSIX uses process-group signals, while Windows uses `taskkill /T /F`. On Windows, child processes are also assigned to a job object with `KILL_ON_JOB_CLOSE` so the default cleanup policy still applies after a hard server shutdown.
+Process-tree termination is platform-aware: POSIX uses process-group signals, while Windows uses job objects, so stopping a registration takes down its descendants rather than orphaning them.
 
 ### Persistence and restart behavior
 
@@ -159,95 +177,34 @@ Intake → Validator → Allocator → Registrar → Responder
 ```
 
 ```text
-app/
-  main.py                     Application entry point and server wiring
-runnerview/
-  page.py                     Static screen loader
-  static/index.html           Runner UI
-spawnpoint/
-  allocator.py                Instance ID allocation
-  auth.py                     Bearer-token validation
-  clock.py                    KST display and UTC storage utilities
-  http_api.py                 HTTP adapter and route handlers
-  models.py                   Spawn instance model
-  params.py                   Request parameters
-  results.py                  Response builders
-  runner.py                   Subprocess lifecycle management
-  service.py                  Top-level spawn handler
-  storage.py                  SQLite-backed registry
-  validator.py                Request validation
-  sql/                        sqloader queries and migrations
-tests/                        Unit and socket-level integration tests
-cmd/spawnpoint/               Go rewrite: server executable (see below)
-sqlassets.go                  Go rewrite: embeds spawnpoint/sql into the executable
-internal/config/              Go rewrite: environment-variable settings
-internal/opslog/              Go rewrite: operations log
-internal/lifecycle/           Go rewrite: startup and shutdown sequences
-internal/host/                Go rewrite: service / console mode
-internal/jobs/                Go rewrite: process containment groups
-internal/runner/              Go rewrite: shell command line, child processes, cleanup, child logs
-internal/textdec/             Go rewrite: child log decoding (UTF-8 / system code page / CP949)
-internal/timefmt/             Go rewrite: response and storage timestamps
-internal/sqlsplit/            Go rewrite: migration statement splitting
-internal/dialect/             Go rewrite: dialect selector, query loader, error interpreter
-internal/store/               Go rewrite: database access and migration runner
-internal/httpapi/             Go rewrite: request front end — routes, authentication, responses
-internal/webui/               Go rewrite: the dashboard, embedded in the executable
-tools/pyref/                  Go rewrite: reference capture from the Python implementation
-tools/exitprobe/              Go rewrite: exit-path measurement harness (not shipped)
+cmd/spawnpoint/               server executable
+internal/config/              environment-variable settings
+internal/opslog/              operations log
+internal/lifecycle/           startup and shutdown sequences
+internal/host/                service / console mode
+internal/jobs/                process containment groups
+internal/runner/              shell command line, child processes, cleanup, child logs
+internal/textdec/             child log decoding (UTF-8 / system code page / CP949)
+internal/timefmt/             response and storage timestamps
+internal/sqlsplit/            migration statement splitting
+internal/dialect/             dialect selector, query loader, error interpreter
+internal/dialect/sql/         embedded queries and migration scripts
+internal/store/               database access and migration runner
+internal/httpapi/             request front end — routes, authentication, responses
+internal/webui/               the dashboard, embedded in the executable
+tools/exitprobe/              exit-path measurement harness (not shipped)
 ```
 
-`app/main.py` loads the static dashboard from `runnerview` and injects it into the HTTP adapter. The Runner and spawn registration domains share a server and database but remain separate in their service logic.
-
-## Testing
-
-Run the full test suite with:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-The storage layer uses the SQLite backend from `sqloader==0.2.18`; the remaining application modules use the Python standard library.
-
-## Go server (single executable)
-
-`cmd/spawnpoint` is the complete Go server: instance issuing, the process
-runner, dashboard, SQL queries and migrations all ship in one executable. The
-Python tree remains as the compatibility reference and test oracle; it is not a
-runtime dependency of the Go deployment.
-
-Build the production artifact with cgo disabled. `go:embed` includes the SQL and
-dashboard, so `dist/spawnpoint.exe` is the only executable runtime artifact:
-
-```powershell
-$env:CGO_ENABLED = '0'
-go build -trimpath -o dist/spawnpoint.exe ./cmd/spawnpoint
-```
-
-The program has no command-line options. It detects whether the Windows service
-control manager started it; otherwise it runs in console mode. For a local
-console check:
-
-```powershell
-$env:SPAWNPOINT_PORT = '8099'
-$env:SPAWNPOINT_DB_PATH = 'C:\ProgramData\SpawnPoint\spawnpoint.db'
-$env:SPAWNPOINT_LOG_DIR = 'C:\ProgramData\SpawnPoint\logs'
-.\dist\spawnpoint.exe
-```
-
-Startup resolves configuration, opens the operations log, migrates the existing
-SQLite database, restores registered commands as stopped, binds the port and
-serves the complete API. Exit codes are 0 for a normal stop, 1 for a retryable
-start/runtime failure, and 2 for an unrecoverable configuration or embedded
-asset defect.
+The Runner and spawn registration domains share a server and database but remain separate in their service logic.
 
 ### Windows service registration
 
 Registration uses Windows' standard service tools; the executable intentionally
-has no install/uninstall subcommands. Run the following in an elevated
-PowerShell session after copying the executable to its final absolute path.
-Use absolute database and log paths because Windows services do not inherit the
-operator's working directory or user environment.
+has no install/uninstall subcommands. It detects whether the service control
+manager started it; otherwise it runs in console mode. Run the following in an
+elevated PowerShell session after copying the executable to its final absolute
+path. Use absolute database and log paths because Windows services do not inherit
+the operator's working directory or user environment.
 
 ```powershell
 $exe = 'C:\Program Files\SpawnPoint\spawnpoint.exe'
@@ -293,22 +250,21 @@ launch. `internal/runner` therefore hands `syscall.SysProcAttr.CmdLine` a
 finished string instead of an argument vector.
 
 The contract is pinned against `internal/runner/testdata/python_reference.json`,
-which is captured from the Python implementation — it intercepts CreateProcess
-and records the real command line without starting anything:
-
-```bash
-python tools/pyref/dump_command_lines.py > internal/runner/testdata/python_reference.json
-```
+a capture of the command lines the previously deployed implementation handed to
+CreateProcess. It is a fixed contract value: the implementation it was measured
+from is gone, and the bytes it recorded are what a registered command still has
+to assemble to.
 
 The operations log is `<SPAWNPOINT_LOG_DIR>/spawnpoint.log`, rotated at 16 MiB
 with five archives kept. `stopping` is written before cleanup starts, so the
 reason survives even when the operating system cuts shutdown short.
+
 ### Database
 
-The Go server opens the *same* SQLite file as the Python implementation and
-shares its migration history, so either can be started against a deployed
-database without the other's work being undone. Three rules make that hold, and
-each is covered by a test:
+SpawnPoint opens SQLite databases created by the previously deployed
+implementation and shares their migration history, so an existing production
+file can be upgraded in place without its schema being re-applied. Three rules
+make that hold, and each is covered by a test:
 
 - the history lives in the existing `migrations` table and stores bare
   filenames, never paths, so already-applied scripts are recognised;
@@ -317,23 +273,22 @@ each is covered by a test:
 - a script's statements and its history row share one transaction, closing the
   window where the schema had changed but nothing recorded it.
 
-The queries and migration scripts are not copied into the Go tree. `sqlassets.go`
-embeds `spawnpoint/sql` directly — the files both implementations use are the
-same files, which is the only arrangement in which they cannot drift.
+The queries and migration scripts live in `internal/dialect/sql/` and are
+embedded from there (`internal/dialect/sqlassets.go`). Their directory layout
+and filenames are the deployed ones, unchanged, because the migration history
+records those filenames.
 
 `internal/dialect` bundles what has to change together when the engine does: the
-driver, the query loader and the error interpreter. The interpreter replaces the
-current implementation's search for words like `unique` in the driver's message,
-which stops matching on any other engine and silently disables the
-duplicate-request path with it; it reads the engine's numeric result code
-instead.
+driver, the query loader and the error interpreter. The interpreter reads the
+engine's numeric result code rather than searching the driver's message for
+words like `unique`, which stops matching on any other engine and would silently
+disable the duplicate-request path with it.
 
-The schema the Go migration runner produces is compared against one captured
-from the Python implementation:
-
-```bash
-python tools/pyref/dump_schema.py > internal/store/testdata/python_schema.json
-```
+The schema the migration runner produces is compared against
+`internal/store/testdata/python_schema.json`, captured from the previously
+deployed implementation. It is a fixed contract value: it covers the exact text
+of every constraint, the partial index predicate and the column defaults, and a
+change to it means a deployed database would no longer match.
 
 ### Child processes and cleanup
 
@@ -373,20 +328,19 @@ end and moves forward to a line boundary; the caller sends the `next_offset` it
 was given back on the next poll. One response carries at most 1 MiB. An `offset`
 past the end of the file means the file was rotated underneath the caller, and
 the response says `reset` so the screen redraws instead of splicing a new file
-onto an old one. An `offset` that cannot be read at all falls to the recent end,
-not to zero — the current implementation falls to zero, which turns one malformed
-parameter into a full read of a 20 MiB file.
+onto an old one. An `offset` that cannot be read at all falls to the recent end
+rather than to zero, so one malformed parameter does not turn into a full read of
+a 20 MiB file.
 
 Windows commands write in more than one notation, so a chunk is tried as UTF-8,
 then as the machine's ANSI code page, then as CP949, and each notation is judged
 over the whole chunk (`internal/textdec`). A character whose tail has not been
 written yet is left for the next read rather than shown broken, and the response
 reports which notation was used. `internal/textdec/testdata/python_reference.json`
-pins the result against the current implementation:
-
-```bash
-python tools/pyref/dump_decode.py > internal/textdec/testdata/python_reference.json
-```
+pins the result against the previously deployed reader — a fixed contract value,
+since log files written by that reader's server are what this decoder is pointed
+at. The capture records the ANSI code page it was taken on, and the comparison
+skips on a machine whose code page differs.
 
 ### Request front end
 
@@ -402,8 +356,9 @@ which a request is judged is part of the contract, not an implementation detail:
 6. the field checks, reporting only the first thing that is wrong.
 
 Responses are JSON with HTML escaping switched off. Go escapes `<`, `>` and `&`
-by default, and every registered command contains `>nul`; with the default left
-on, a command would come back visibly different from the one that was registered.
+by default, and a registered command routinely contains `>nul`; with the default
+left on, a command would come back visibly different from the one that was
+registered.
 
 Two 404s exist and the message is what tells them apart: `Process not found.` is
 a real operation on an identifier that is not registered, and `Unknown endpoint.`
@@ -417,19 +372,21 @@ upgrade and talk to a server it no longer matches. It is checked at startup
 alongside the SQL assets: a build that lost it stops the process instead of
 serving a blank page indefinitely.
 
-`POST /spawn` is routed, authenticated, validated and issued by the Go server.
+`POST /spawn` is routed, authenticated, validated and issued by the same server.
 The issuer performs duplicate lookup, atomic daily-sequence allocation,
-cryptographic random-tail generation, collision retry and persistence against
-the same SQLite database as the runner.
+cryptographic random-tail generation, collision retry and persistence against the
+same SQLite database as the runner.
 
-### Tests
+## Testing
 
 ```bash
 go test ./...                                        # no processes are started
 SPAWNPOINT_LIVE_SPAWN=1 go test ./internal/runner/ ./internal/jobs/
 SPAWNPOINT_LIVE_SHUTDOWN=1 go test ./cmd/spawnpoint/  # + build, run, stop the exe
-SPAWNPOINT_LIVE_PYREF=1 go test ./internal/store/ ./internal/textdec/
 ```
+
+`go test ./...` needs nothing but a Go toolchain. The live suites are opt-in
+because they start real processes.
 
 The live shutdown tests build the executable, run it on a free port with its own
 database and log directory, and stop it with a real console control event. They
@@ -446,11 +403,11 @@ against the built executable: the dashboard, liveness, a registration that start
 a process, its log, the delete that removes both, every error response, and a
 shutdown with a request still in flight.
 
-`SPAWNPOINT_LIVE_PYREF` runs the Python implementation to build a database, then
-points the Go migration runner at it and requires that nothing is applied. It is
-the check that the rewrite will not re-migrate the deployed file on first start.
-It also re-captures the log decoding reference and requires the stored one to
-match, so the fixture cannot quietly go stale.
+The `testdata/python_*.json` fixtures are captures of the previously deployed
+implementation — command-line bytes, database schema, and log decoding. That
+implementation is no longer in the tree and the fixtures are not regenerated;
+they are the compatibility contract a deployed database and a deployed log file
+still hold this server to.
 
 ## Scope
 

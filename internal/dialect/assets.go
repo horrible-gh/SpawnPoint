@@ -9,14 +9,13 @@ import (
 	"sort"
 	"strings"
 
-	root "spawnpoint"
 	"spawnpoint/internal/sqlsplit"
 )
 
 // assetSet is the query loader half of the three-piece set: it resolves one
 // engine's queries and migration scripts out of the embedded tree.
 //
-// The layout is the current implementation's, unchanged (0006-D 3.5):
+// The layout is the deployed one, unchanged (0006-D 3.5):
 //
 //	<dialect>/<group>.json          key -> filename mapping
 //	<dialect>/<group>_<key>.sql     the query
@@ -28,8 +27,8 @@ type assetSet struct {
 
 func assetsFor(kind Kind) assetSet {
 	return assetSet{
-		queryDir:     path.Join(root.SQLRoot, string(kind)),
-		migrationDir: path.Join(root.SQLRoot, "migration", string(kind)),
+		queryDir:     path.Join(sqlRoot, string(kind)),
+		migrationDir: path.Join(sqlRoot, "migration", string(kind)),
 	}
 }
 
@@ -49,7 +48,7 @@ var migrationNamePattern = regexp.MustCompile(`^\d{3}_.+\.sql$`)
 // Migrations returns this engine's migration scripts in the order they must be
 // applied: ascending by filename, compared as strings (0004-NR R4).
 func (a *Adapter) Migrations() ([]Migration, error) {
-	entries, err := fs.ReadDir(root.SQL, a.assets.migrationDir)
+	entries, err := fs.ReadDir(sqlFS, a.assets.migrationDir)
 	if err != nil {
 		return nil, fmt.Errorf("migration scripts for %s: %w", a.kind, err)
 	}
@@ -75,10 +74,11 @@ func (a *Adapter) Migrations() ([]Migration, error) {
 
 // Query loads one query by group and key, following the group's .json mapping.
 //
-// The indirection is the current implementation's (sqloader) and is kept so the
-// query files stay byte-identical between the two. Resolution happens on every
-// call rather than once at startup; the files are in memory already and the
-// cost is a map lookup against a parsed document of five entries.
+// The indirection is the deployed one's (sqloader) and is kept so the query
+// files stay byte-identical with what a deployed database was built from.
+// Resolution happens on every call rather than once at startup; the files are in
+// memory already and the cost is a map lookup against a parsed document of five
+// entries.
 func (a *Adapter) Query(group, key string) (string, error) {
 	mapping, err := a.assets.mapping(group)
 	if err != nil {
@@ -105,7 +105,7 @@ func (a *Adapter) MustQuery(group, key string) string {
 // mapping parses <group>.json.
 func (s assetSet) mapping(group string) (map[string]string, error) {
 	name := path.Join(s.queryDir, group+".json")
-	raw, err := root.SQL.ReadFile(name)
+	raw, err := sqlFS.ReadFile(name)
 	if err != nil {
 		return nil, fmt.Errorf("query group %q: %w", group, err)
 	}
@@ -118,14 +118,14 @@ func (s assetSet) mapping(group string) (map[string]string, error) {
 
 // read returns a file's text, refusing one that carries a byte order mark.
 //
-// 0006-D 3.5 requires the embedded files to be free of a BOM. The current
-// implementation reads them with a decoder that does not strip one, so a mark
-// would end up in front of `CREATE` and the statement would fail to parse — and
-// it would fail identically here. Refusing at the boundary means the failure is
+// 0006-D 3.5 requires the embedded files to be free of a BOM. A mark would end
+// up in front of `CREATE` and the statement would fail to parse, exactly as it
+// did for the loader these files were written for. Refusing at the boundary
+// means the failure is
 // reported as a defective asset at startup rather than as a syntax error in the
 // middle of applying a migration.
 func (s assetSet) read(name string) (string, error) {
-	raw, err := root.SQL.ReadFile(name)
+	raw, err := sqlFS.ReadFile(name)
 	if err != nil {
 		return "", err
 	}
@@ -139,7 +139,7 @@ func (s assetSet) read(name string) (string, error) {
 // database is opened, and a failure is unrecoverable: the assets are compiled
 // into the binary, so every restart produces the same result (0008-L 2.15, 3.2).
 func (a *Adapter) Validate() error {
-	entries, err := fs.ReadDir(root.SQL, a.assets.migrationDir)
+	entries, err := fs.ReadDir(sqlFS, a.assets.migrationDir)
 	if err != nil {
 		return fmt.Errorf("migration scripts for %s: %w", a.kind, err)
 	}
@@ -178,7 +178,7 @@ func (a *Adapter) Validate() error {
 // file that exists and is free of a BOM. A typo in a mapping would otherwise
 // surface as a failed request long after startup.
 func (a *Adapter) validateQueries() error {
-	entries, err := fs.ReadDir(root.SQL, a.assets.queryDir)
+	entries, err := fs.ReadDir(sqlFS, a.assets.queryDir)
 	if err != nil {
 		return fmt.Errorf("queries for %s: %w", a.kind, err)
 	}

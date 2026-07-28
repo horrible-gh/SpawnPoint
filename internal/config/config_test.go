@@ -26,7 +26,7 @@ func TestDefaultsMatchPythonEntryPoint(t *testing.T) {
 		t.Errorf("APITokens = %v, want empty (auth off by default)", cfg.APITokens)
 	}
 	if !cfg.KillChildrenOnExit {
-		t.Error("KillChildrenOnExit = false, want true (app/main.py default is 1)")
+		t.Error("KillChildrenOnExit = false, want true (the deployed default is 1)")
 	}
 }
 
@@ -56,7 +56,7 @@ func TestAllValuesRead(t *testing.T) {
 	}
 }
 
-// app/main.py `_tokens_from_env` strips each entry and drops the empty ones.
+// The deployed `_tokens_from_env` strips each entry and drops the empty ones.
 // A trailing comma is common in shell configuration and must not create a
 // blank token, which would otherwise authorise an empty Bearer value.
 func TestTokenListTrimsAndDropsBlanks(t *testing.T) {
@@ -86,7 +86,7 @@ func TestBlankTokenListDisablesAuth(t *testing.T) {
 	}
 }
 
-// The negative spellings come from app/main.py; everything else is true.
+// The negative spellings come from the previous entry point; everything else is true.
 func TestKillChildrenSpellings(t *testing.T) {
 	off := []string{"0", "false", "FALSE", "no", "Off", " off "}
 	on := []string{"1", "true", "yes", "on", "anything"}

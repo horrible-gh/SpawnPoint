@@ -1,15 +1,11 @@
-__pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
 spawnpoint.db
 *.sqlite
 *.sqlite3
-.venv/
 logs/
 .tmp-tests*/
 *.exe
 /bin/
+/dist/
 .tmp/
 .gocache/
 .gotmp/

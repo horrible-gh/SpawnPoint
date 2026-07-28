@@ -1,6 +1,6 @@
 // Package sqlsplit cuts a migration file into individual statements.
 //
-// The Python implementation hands whole files to sqloader, which splits them
+// The previous implementation handed whole files to sqloader, which split them
 // for it. Go has no equivalent, so 0008-L 2.8 fixed the splitting rule itself:
 // a semicolon separates statements only in normal state, never inside a string
 // literal, a quoted identifier or a comment.
