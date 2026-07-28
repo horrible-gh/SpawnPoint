@@ -8,3 +8,9 @@ spawnpoint.db
 .venv/
 logs/
 .tmp-tests*/
+*.exe
+/bin/
+.tmp/
+.gocache/
+.gotmp/
+.testtmp/

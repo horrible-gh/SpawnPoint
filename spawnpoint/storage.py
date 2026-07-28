@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqloader import SQLiteWrapper, SQLoader, DatabaseMigrator
 
+from .clock import from_utc_iso, to_utc_iso
 from .models import SpawnInstance
 
 _PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -29,15 +30,11 @@ _SQL_DIR = os.path.join(_PACKAGE_DIR, "sql", "sqlite")
 _MIGRATION_DIR = os.path.join(_PACKAGE_DIR, "sql", "migration", "sqlite")
 
 
-def _to_utc_iso(dt: datetime) -> str:
-    """Convert datetime to UTC ISO 8601 fixed-width format."""
-    utc_dt = dt.astimezone(timezone.utc)
-    return utc_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-
-
-def _from_utc_iso(s: str) -> datetime:
-    """Parse UTC ISO 8601 string to datetime."""
-    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+# The two renderings live in spawnpoint.clock so that callers outside this
+# module — and the tests — have one name for them rather than reaching into a
+# private helper here.
+_to_utc_iso = to_utc_iso
+_from_utc_iso = from_utc_iso
 
 
 @dataclass(frozen=True)

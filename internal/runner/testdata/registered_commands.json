@@ -1,0 +1,31 @@
+{
+  "_source": "0008-L 2.1 판정 기준표 (measured from the live 0004-NR 3.2 sample). {C} is resolve_shell_path().",
+  "_measured_shell": "C:\\windows\\system32\\cmd.exe",
+  "entries": [
+    {
+      "id": "proc_45c05b99",
+      "cmd": "powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\stg\\flowgate.ps1\"",
+      "expected": "{C} /c \"chcp 65001 >nul & powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\stg\\flowgate.ps1\"\""
+    },
+    {
+      "id": "proc_f6aa7819",
+      "cmd": "powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\dev\\preview-flowgate.ps1\" 0340",
+      "expected": "{C} /c \"chcp 65001 >nul & powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\dev\\preview-flowgate.ps1\" 0340\""
+    },
+    {
+      "id": "proc_ca2f42ed",
+      "cmd": "powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\stg\\mirage.ps1\"",
+      "expected": "{C} /c \"chcp 65001 >nul & powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\stg\\mirage.ps1\"\""
+    },
+    {
+      "id": "proc_f8470a37",
+      "cmd": "powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\dev\\preview-spawnpoint.ps1\" 0109",
+      "expected": "{C} /c \"chcp 65001 >nul & powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\dev\\preview-spawnpoint.ps1\" 0109\""
+    },
+    {
+      "id": "proc_2bbd0c5b",
+      "cmd": "powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\dev\\preview-mirage.ps1\"",
+      "expected": "{C} /c \"chcp 65001 >nul & powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\dev\\preview-mirage.ps1\"\""
+    }
+  ]
+}

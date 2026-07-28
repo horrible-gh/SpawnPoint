@@ -1,0 +1,1027 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Process Runner</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#161b22; --panel2:#1b222c; --line:#252d38;
+    --txt:#d7dee7; --dim:#8b98a8; --faint:#5f6b7a;
+    --accent:#4f9dff; --run:#3fb950; --stop:#f0883e; --kill:#f85149;
+    --chip-run:#12331d; --chip-exit:#2a2f38; --chip-kill:#3a1414;
+    --mono:"JetBrains Mono","Cascadia Code",Consolas,monospace;
+    --sans:-apple-system,"Segoe UI",Roboto,"Noto Sans KR",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:14px;
+    display:flex;flex-direction:column;overflow:hidden}
+
+  /* ── top bar: global actions live here — selection + Delete + [+ New] ── */
+  header{display:flex;align-items:center;gap:10px;padding:10px 16px;
+    background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto}
+  .logo{font-weight:700;letter-spacing:.5px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .logo .dot{width:9px;height:9px;border-radius:50%;background:var(--run);
+    box-shadow:0 0 8px var(--run)}
+  .logo .dot.off{background:var(--kill);box-shadow:0 0 8px var(--kill)}
+  header .spacer{flex:1}
+  .status{font-size:12px;font-family:var(--mono);color:var(--faint)}
+  .status.warn{color:var(--stop)}
+  .status.ok{color:var(--run)}
+
+  /* the current selection is always visible in the header, so it's never
+     ambiguous which entry Delete would act on */
+  .selbar{display:flex;align-items:center;gap:8px;padding:4px 4px 4px 10px;
+    border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
+  .selbar.none{border-style:dashed;background:transparent}
+  .selname{font-family:var(--mono);font-size:12px;color:var(--txt);max-width:190px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .selbar.none .selname{color:var(--faint)}
+  .vsep{width:1px;height:22px;background:var(--line)}
+
+  .btn{border:0;border-radius:7px;padding:8px 14px;font-weight:600;cursor:pointer;
+    font-size:13px;font-family:var(--sans);white-space:nowrap}
+  .btn:disabled{opacity:.42;cursor:default}
+  .btn-primary{background:var(--accent);color:#04101f}
+  .btn-primary:hover:not(:disabled){filter:brightness(1.12)}
+  .btn-run{background:var(--run);color:#04140a}
+  .btn-run:hover:not(:disabled){filter:brightness(1.1)}
+  .btn-ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}
+  .btn-ghost:hover:not(:disabled){background:#202934}
+  .btn-danger{background:transparent;color:#ff8a82;border:1px solid #682420}
+  .btn-danger:hover:not(:disabled){background:#3a1414}
+  .btn-sm{padding:6px 11px;font-size:12px}
+  .err{color:var(--kill);font-size:12px;font-family:var(--mono)}
+
+  /* ── main split ── */
+  main{flex:1;display:flex;flex-direction:column;min-height:0}
+  .tablewrap{flex:1 1 55%;overflow:auto;min-height:0}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{position:sticky;top:0;background:var(--panel);color:var(--faint);
+    text-align:left;font-weight:600;font-size:11px;letter-spacing:.4px;
+    text-transform:uppercase;padding:9px 14px;border-bottom:1px solid var(--line)}
+  tbody td{padding:10px 14px;border-bottom:1px solid var(--line)}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:#12171e}
+  tbody tr.sel{background:#132033;box-shadow:inset 3px 0 0 var(--accent)}
+  .name{font-family:var(--mono);color:var(--txt)}
+  .name .sub{display:block;color:var(--faint);font-size:11px;margin-top:2px;
+    word-break:break-all}
+  .name .sub .warn{color:#e6c07b}
+  .pid,.up{font-family:var(--mono);color:var(--dim);font-size:12px}
+  .chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;
+    font-size:11px;font-weight:600;font-family:var(--mono)}
+  .chip::before{content:"";width:6px;height:6px;border-radius:50%}
+  .c-run{background:var(--chip-run);color:#5fd97a}   .c-run::before{background:#5fd97a;box-shadow:0 0 6px #5fd97a}
+  .c-exit{background:var(--chip-exit);color:#9aa7b6} .c-exit::before{background:#9aa7b6}
+  .c-kill{background:var(--chip-kill);color:#ff7b72} .c-kill::before{background:#ff7b72}
+  .ops{display:flex;gap:6px}
+  .op{width:30px;height:30px;border-radius:6px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--dim);cursor:pointer;font-size:13px;
+    display:grid;place-items:center}
+  .op:hover{color:#fff}
+  .op.edit:hover{border-color:var(--accent);color:var(--accent)}
+  .op.run:hover{border-color:var(--run);color:var(--run)}
+  .op.stop:hover{border-color:var(--stop);color:var(--stop)}
+  .op.restart:hover{border-color:var(--accent);color:var(--accent)}
+  .op:disabled{opacity:.28;cursor:default}
+
+  /* the empty state only shows one next action: [+ New command] */
+  .emptyrow td{padding:34px 14px;text-align:center;cursor:default}
+  .emptyrow td:hover{background:transparent}
+  .emptybox{display:inline-flex;flex-direction:column;align-items:center;gap:12px}
+  .emptybox p{margin:0;color:var(--faint)}
+
+  /* ── log viewer ── */
+  .logs{flex:1 1 45%;min-height:0;display:flex;flex-direction:column;
+    border-top:1px solid var(--line);background:#0c0f13}
+  .logbar{display:flex;align-items:center;gap:10px;padding:8px 14px;
+    background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto;flex-wrap:wrap}
+  .logbar .t{font-weight:600;font-family:var(--mono);font-size:13px}
+  .logbar .t b{color:var(--accent)}
+  .logbar .spacer{flex:1}
+  .toggle{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12px;cursor:pointer}
+  .toggle .sw{width:34px;height:18px;border-radius:20px;background:#1f6f36;position:relative}
+  .toggle .sw::after{content:"";position:absolute;top:2px;right:2px;width:14px;height:14px;
+    border-radius:50%;background:#e8ffef}
+  .toggle.off .sw{background:#3a4250}
+  .toggle.off .sw::after{right:auto;left:2px;background:#8b98a8}
+  .maxlines{display:flex;align-items:center;gap:6px;color:var(--dim);font-size:12px}
+  select,.dlg input,.dlg textarea{background:var(--bg);border:1px solid var(--line);
+    border-radius:7px;color:var(--txt);padding:6px 9px;font-family:var(--mono);
+    font-size:12px;outline:none}
+  select:focus,.dlg input:focus,.dlg textarea:focus{border-color:var(--accent)}
+  .logview{flex:1;overflow:auto;padding:10px 14px;font-family:var(--mono);
+    font-size:12.5px;line-height:1.65;white-space:pre-wrap;word-break:break-all;color:#9aa7b6}
+  .logview .placeholder{color:var(--faint)}
+  /* Notice strip above the log body: rotation, truncation, encoding. Kept out of
+     .logview because that element's text is replaced wholesale on every poll. */
+  .lognotice{display:none;align-items:center;gap:10px;padding:6px 14px;flex:0 0 auto;
+    font-size:11.5px;color:#e6c07b;background:#221c11;border-bottom:1px solid var(--line)}
+  .lognotice.on{display:flex}
+  .lognotice .spacer{flex:1}
+  .enc{color:var(--faint);font-size:11px;font-family:var(--mono)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#2a333f;border-radius:6px}
+  .footnote{padding:6px 16px;color:var(--faint);font-size:11px;background:var(--panel);
+    border-top:1px solid var(--line);display:flex;gap:16px;flex:0 0 auto;flex-wrap:wrap}
+  .footnote b{color:var(--dim)}
+
+  /* ── modal dialog (New / Edit command) ── */
+  .backdrop{position:fixed;inset:0;background:rgba(6,9,13,.72);backdrop-filter:blur(2px);
+    display:none;align-items:center;justify-content:center;padding:24px;z-index:40}
+  .backdrop.open{display:flex}
+  /* min-width:0 — flex item, so without it the content's min-content width
+     pushes the sheet wider than the viewport on narrow screens */
+  .dlg{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    width:640px;max-width:100%;max-height:100%;min-width:0;overflow:hidden;
+    display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+  /* clicking the backdrop never closes the dialog — it only nudges to signal that */
+  .dlg.nudge{animation:nudge .32s ease}
+  @keyframes nudge{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}
+    45%{transform:translateX(6px)}70%{transform:translateX(-3px)}}
+  /* kept off the global `header` selector so mobile header rules don't leak in */
+  .dlghead{display:flex;align-items:center;gap:8px;padding:14px 18px;
+    border-bottom:1px solid var(--line);flex:0 0 auto}
+  .dlghead .spacer{flex:1}
+  .dlg h2{margin:0;font-size:15px;font-weight:700;letter-spacing:.2px;min-width:0}
+  .x{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--dim);cursor:pointer;font-size:14px;
+    display:grid;place-items:center}
+  .x:hover{color:#fff;border-color:var(--kill)}
+  .dlgbody{padding:16px 18px;overflow:auto;display:flex;flex-direction:column;gap:14px;
+    min-width:0;min-height:0}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field > label{color:var(--dim);font-size:11.5px;font-weight:600;letter-spacing:.3px}
+  .field .hint{color:var(--faint);font-size:11px}
+  .field input,.field textarea{width:100%;padding:9px 11px;font-size:13px}
+  /* the command grows downward instead of scrolling out of reach sideways */
+  .field textarea.cmd{resize:none;overflow:hidden;min-height:40px;line-height:1.5;
+    white-space:pre-wrap;word-break:break-word}
+  .row2{display:flex;gap:12px}
+  .row2 .field{flex:1;min-width:0}
+  .dlgfoot{padding:13px 18px;border-top:1px solid var(--line);display:flex;
+    align-items:center;gap:9px;flex-wrap:wrap;flex:0 0 auto}
+  .dlgfoot .spacer{flex:1}
+  .dlgnote{color:var(--faint);font-size:11px;font-family:var(--mono);min-width:0}
+  .dlgnote.warn{color:var(--stop)}
+  .dlg.small{width:400px}
+  .dlgbody p{margin:0;line-height:1.6;color:var(--dim)}
+  .dlgbody p b{color:var(--txt);font-family:var(--mono)}
+
+  /* ── mobile ── */
+  @media (max-width:640px){
+    header{flex-wrap:wrap;gap:8px}
+    header .spacer{display:none}
+    .selbar{order:3;width:100%}
+    .selname{max-width:none;flex:1}
+    header > .btn-primary{order:2;margin-left:auto}
+    .backdrop{padding:0}
+    .dlg{width:100%;height:100%;border:0;border-radius:0;max-height:none}
+    .row2{flex-direction:column}
+    /* the note takes its own line, the 3 buttons split the rest evenly */
+    .dlgfoot .dlgnote{flex-basis:100%}
+    .dlgfoot .spacer{display:none}
+    .dlgfoot .btn{flex:1}
+    th.col-pid,td.col-pid,th.col-up,td.col-up{display:none}
+    /* fit the 4th (✎) op button on one line on narrow screens too */
+    .ops{gap:4px}
+    .op{width:27px;height:27px;font-size:12px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span class="dot" id="connDot"></span>Process Runner</div>
+  <span class="status" id="connStatus"></span>
+  <div class="spacer"></div>
+  <span class="err" id="globalErr"></span>
+  <div class="selbar none" id="selBar">
+    <span class="selname" id="selName">No selection</span>
+    <div class="vsep"></div>
+    <button class="btn btn-danger btn-sm" id="deleteBtn" disabled>Delete</button>
+  </div>
+  <button class="btn btn-primary" id="newBtn">+ New</button>
+</header>
+
+<main>
+  <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th style="width:38%">Name / Command</th><th>Status</th>
+        <th class="col-pid">PID</th><th class="col-up">Uptime</th>
+        <th style="width:160px">Actions</th>
+      </tr></thead>
+      <tbody id="procBody">
+        <tr class="emptyrow"><td colspan="5"><div class="emptybox">
+          <p>No registered commands.</p>
+          <button class="btn btn-primary" data-act="new">+ New command</button>
+        </div></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="logs">
+    <div class="logbar">
+      <span class="t" id="logTitle">Logs · <b>—</b></span>
+      <div class="spacer"></div>
+      <label class="maxlines">Max lines
+        <select id="maxLinesSelect">
+          <option value="0">Unlimited</option>
+          <option value="30">30</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+          <option value="500">500</option>
+          <option value="1000">1000</option>
+        </select>
+      </label>
+      <span class="enc" id="logEnc"></span>
+      <button class="btn btn-ghost btn-sm" id="logFromStartBtn" disabled>From the start</button>
+      <span class="toggle on" id="autoscrollToggle"><span class="sw"></span>Auto-scroll</span>
+    </div>
+    <div class="lognotice" id="logNotice">
+      <span id="logNoticeText"></span>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost btn-sm" id="logMoreBtn" style="display:none">Load more</button>
+    </div>
+    <div class="logview" id="logView"><div class="placeholder">Select a process above to view logs.</div></div>
+  </div>
+</main>
+
+<!-- New / Edit dialog. Backdrop click never closes it — only ✕ / Cancel / Esc do. -->
+<div class="backdrop" id="formBackdrop">
+  <div class="dlg" id="formDlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+    <div class="dlghead">
+      <h2 id="dlgTitle">New command</h2>
+      <div class="spacer"></div>
+      <button class="x" id="dlgClose" title="Close">✕</button>
+    </div>
+    <div class="dlgbody">
+      <div class="field">
+        <label for="fLabel">Label</label>
+        <input id="fLabel" placeholder="Display name (optional)">
+      </div>
+      <div class="field">
+        <label for="fCmd">Command</label>
+        <textarea id="fCmd" class="cmd" rows="1" placeholder="Command to run… (example: python -m http.server 8200)"></textarea>
+        <span class="hint">One line. Long commands grow downward instead of scrolling sideways.</span>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="fCwd">Working directory</label>
+          <input id="fCwd" placeholder="Working directory (optional)">
+        </div>
+        <div class="field">
+          <label for="fEnv">Environment</label>
+          <input id="fEnv" placeholder="KEY=VAL,KEY2=VAL2 (optional)">
+        </div>
+      </div>
+    </div>
+    <div class="dlgfoot">
+      <span class="dlgnote" id="dlgNote">Clicking the backdrop does not close this</span>
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" id="dlgCancel">Cancel</button>
+      <button class="btn btn-ghost" id="dlgSave">Save</button>
+      <button class="btn btn-run" id="dlgSaveRun">Save &amp; Run</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm dialog (delete / discard) -->
+<div class="backdrop" id="confirmBackdrop">
+  <div class="dlg small" id="confirmDlg" role="dialog" aria-modal="true">
+    <div class="dlghead"><h2 id="confirmTitle">Delete command</h2></div>
+    <div class="dlgbody"><p id="confirmBody"></p></div>
+    <div class="dlgfoot">
+      <div class="spacer"></div>
+      <button class="btn btn-ghost" id="confirmNo">Cancel</button>
+      <button class="btn btn-danger" id="confirmYes">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="footnote">
+  <span><b>API</b> POST /processes · PUT /processes/&lt;id&gt; · /processes/&lt;id&gt;/run · /stop · /restart · GET /processes</span>
+  <span><b>Logs</b> polling tail (1s) · GET /processes/&lt;id&gt;/logs (no offset = last 256 KiB) · 1 MiB per response · logs/&lt;id&gt;.log</span>
+  <span><b>Persistence</b> Commands survive a server restart · restored as stopped (press ▶ to resume)</span>
+  <span><b>Termination</b> POSIX killpg(SIGTERM→SIGKILL) / Windows taskkill /T /F (children too)</span>
+  <span><b>Binding</b> Default 127.0.0.1 · local use only</span>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // Process list polling. Backs off while the server is unreachable so a stopped
+  // server does not generate a request per second forever.
+  var POLL_BASE_MS = 2000;
+  var POLL_MAX_MS = 30000;
+
+  var MAX_LINES_KEY = "spawnpoint.runnerview.maxLines";
+  var DEFAULT_MAX_LINES = 200;
+
+  function loadMaxLines(){
+    var n;
+    try { n = parseInt(window.localStorage.getItem(MAX_LINES_KEY), 10); }
+    catch (e) { n = NaN; }
+    return isNaN(n) ? DEFAULT_MAX_LINES : n;
+  }
+  function saveMaxLines(n){
+    try { window.localStorage.setItem(MAX_LINES_KEY, String(n)); } catch (e) {}
+  }
+
+  var state = {
+    processes: [],
+    selectedId: null,
+    // null means "send no offset at all", which the server reads as "the last
+    // 256 KiB". The old screen sent offset=0 on every selection and pulled whole
+    // 20 MiB files across on a single click; the first request now asks for the
+    // end and every request after it echoes next_offset.
+    logOffset: null,
+    autoscroll: true,
+    connected: true,
+    // authRequired latches once the server answers 401. Polling stops rather
+    // than repeating a request that cannot start succeeding on its own.
+    authRequired: false,
+    pollDelay: POLL_BASE_MS,
+    refreshTimer: null,
+    statusTimer: null,
+    maxLines: loadMaxLines(),
+    logLines: [],
+    logPending: "",
+    logSize: 0,
+    // logPaused stops the 1 s poller after a truncated answer. Without it the
+    // screen would walk a 20 MiB file forward a megabyte per second on its own;
+    // reading from the start is something the user asks for once, explicitly.
+    logPaused: false,
+    // logSticky keeps the rotation notice on screen. It is true for exactly one
+    // response, and clearing the strip on the next poll a second later would
+    // mean nobody ever reads it.
+    logSticky: false,
+    // unpersisted holds the ids whose last registration write failed.
+    unpersisted: {},
+  };
+
+  // Dialog-only state: which entry (if any) is being edited, and whether the
+  // form has unsaved edits (gates the discard confirmation on close).
+  var dlg = { mode: "new", editingId: null, dirty: false };
+  var confirmAction = null;
+
+  var el = {
+    globalErr: document.getElementById("globalErr"),
+    connDot: document.getElementById("connDot"),
+    connStatus: document.getElementById("connStatus"),
+    selBar: document.getElementById("selBar"),
+    selName: document.getElementById("selName"),
+    deleteBtn: document.getElementById("deleteBtn"),
+    newBtn: document.getElementById("newBtn"),
+    procBody: document.getElementById("procBody"),
+    logTitle: document.getElementById("logTitle"),
+    logView: document.getElementById("logView"),
+    autoscrollToggle: document.getElementById("autoscrollToggle"),
+    maxLinesSelect: document.getElementById("maxLinesSelect"),
+    formBackdrop: document.getElementById("formBackdrop"),
+    formDlg: document.getElementById("formDlg"),
+    dlgTitle: document.getElementById("dlgTitle"),
+    dlgClose: document.getElementById("dlgClose"),
+    dlgCancel: document.getElementById("dlgCancel"),
+    dlgSave: document.getElementById("dlgSave"),
+    dlgSaveRun: document.getElementById("dlgSaveRun"),
+    dlgNote: document.getElementById("dlgNote"),
+    fLabel: document.getElementById("fLabel"),
+    fCmd: document.getElementById("fCmd"),
+    fCwd: document.getElementById("fCwd"),
+    fEnv: document.getElementById("fEnv"),
+    confirmBackdrop: document.getElementById("confirmBackdrop"),
+    confirmDlg: document.getElementById("confirmDlg"),
+    confirmTitle: document.getElementById("confirmTitle"),
+    confirmBody: document.getElementById("confirmBody"),
+    confirmNo: document.getElementById("confirmNo"),
+    confirmYes: document.getElementById("confirmYes"),
+    logNotice: document.getElementById("logNotice"),
+    logNoticeText: document.getElementById("logNoticeText"),
+    logMoreBtn: document.getElementById("logMoreBtn"),
+    logFromStartBtn: document.getElementById("logFromStartBtn"),
+    logEnc: document.getElementById("logEnc"),
+  };
+  el.maxLinesSelect.value = String(state.maxLines);
+
+  // Auto-grow the command textarea so long commands wrap into view instead of
+  // scrolling horizontally out of reach (mobile touch-drag cannot scroll a
+  // native <input> the way a mouse drag can).
+  function autoGrowCmd(){
+    el.fCmd.style.height = "auto";
+    el.fCmd.style.height = el.fCmd.scrollHeight + "px";
+  }
+  el.fCmd.addEventListener("input", autoGrowCmd);
+  el.fCmd.addEventListener("keydown", function(ev){
+    if (ev.key === "Enter") ev.preventDefault();
+  });
+
+  function showError(msg){
+    el.globalErr.textContent = msg || "";
+  }
+
+  function showStatus(msg, kind){
+    el.connStatus.textContent = msg || "";
+    el.connStatus.className = "status" + (kind ? " " + kind : "");
+  }
+
+  function flashStatus(msg, kind, ms){
+    showStatus(msg, kind);
+    clearTimeout(state.statusTimer);
+    state.statusTimer = setTimeout(function(){ showStatus(""); }, ms || 5000);
+  }
+
+  // The server is unreachable: report it as a connection state, not as the browser's
+  // raw "Failed to fetch", and slow the polling down while it stays down.
+  function markOffline(){
+    state.pollDelay = state.connected ? POLL_BASE_MS : Math.min(state.pollDelay * 2, POLL_MAX_MS);
+    state.connected = false;
+    el.connDot.classList.add("off");
+    clearTimeout(state.statusTimer);
+    showError("");
+    showStatus("Cannot reach the server - retrying in " + Math.round(state.pollDelay / 1000) + "s", "warn");
+  }
+
+  function markOnline(){
+    var wasOffline = !state.connected;
+    state.connected = true;
+    state.pollDelay = POLL_BASE_MS;
+    el.connDot.classList.remove("off");
+    if (wasOffline) flashStatus("Reconnected", "ok", 3000);
+  }
+
+  // The server answered 401. This screen carries no token — it is served from
+  // the same process it talks to — so retrying cannot start working, and a
+  // poller that kept going would fill the log with rejected requests. Stop, and
+  // say why.
+  function markUnauthorised(){
+    if (state.authRequired) return;
+    state.authRequired = true;
+    clearTimeout(state.refreshTimer);
+    clearTimeout(state.statusTimer);
+    el.connDot.classList.add("off");
+    showStatus("Authentication required — this server is running with SPAWNPOINT_API_TOKENS set.", "warn");
+    showError("");
+  }
+
+  function api(path, opts){
+    opts = opts || {};
+    var headers = opts.headers || {};
+
+    if (opts.body) headers["Content-Type"] = "application/json";
+    return fetch(path, {
+      method: opts.method || "GET",
+      headers: headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    }).catch(function(){
+      // fetch() rejects only when the request never reached the server (server down,
+      // restarting, connection refused). Flag it so callers can tell a dead connection
+      // apart from an application error the server actually answered with.
+      var netErr = new Error("Cannot reach the server");
+      netErr.network = true;
+      throw netErr;
+    }).then(function(resp){
+      return resp.json().then(function(data){
+        if (!resp.ok || data.ok === false){
+          var err = new Error((data.error && data.error.message) || ("HTTP " + resp.status));
+          err.status = resp.status;
+          throw err;
+        }
+        return data;
+      }, function(){
+        var parseErr = new Error("HTTP " + resp.status + " (unexpected response)");
+        parseErr.status = resp.status;
+        throw parseErr;
+      });
+    });
+  }
+
+  function findProcess(id){
+    if (!id) return null;
+    for (var i = 0; i < state.processes.length; i++){
+      if (state.processes[i].id === id) return state.processes[i];
+    }
+    return null;
+  }
+
+  // Splice a freshly POST/PUT-returned process into the local list so it can be
+  // selected immediately, without waiting on the next poll to reconcile.
+  function upsertProcess(p){
+    for (var i = 0; i < state.processes.length; i++){
+      if (state.processes[i].id === p.id){ state.processes[i] = p; return; }
+    }
+    state.processes.push(p);
+  }
+
+  function parseEnv(text){
+    var env = {};
+    (text || "").split(",").forEach(function(pair){
+      pair = pair.trim();
+      if (!pair) return;
+      var i = pair.indexOf("=");
+      if (i < 0) return;
+      env[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
+    });
+    return Object.keys(env).length ? env : undefined;
+  }
+  function envText(env){
+    return Object.keys(env || {}).map(function(k){ return k + "=" + env[k]; }).join(",");
+  }
+
+  function fmtDuration(ms){
+    if (ms < 0) ms = 0;
+    var s = Math.floor(ms / 1000);
+    var days = Math.floor(s / 86400); s -= days * 86400;
+    var h = Math.floor(s / 3600); s -= h * 3600;
+    var m = Math.floor(s / 60); s -= m * 60;
+    var hh = String(h).padStart(2, "0"), mm = String(m).padStart(2, "0"), ss = String(s).padStart(2, "0");
+    return days > 0 ? (days + "d " + hh + ":" + mm + ":" + ss) : (hh + ":" + mm + ":" + ss);
+  }
+
+  // Five states, not four. `failed` is new: the entry was registered but the
+  // shell never started, which the old server could only show as `stopped`.
+  function statusChip(p){
+    if (p.status === "running") return '<span class="chip c-run">running</span>';
+    if (p.status === "exited") return '<span class="chip c-exit">exited (' + (p.exit_code == null ? "?" : p.exit_code) + ')</span>';
+    if (p.status === "stopped"){
+      // A stop request that produced a non-zero code is still `stopped` — who
+      // ended it decides the status, how it ended is the exit code.
+      return '<span class="chip c-exit">stopped' + (p.exit_code == null ? "" : " (" + p.exit_code + ")") + '</span>';
+    }
+    if (p.status === "failed") return '<span class="chip c-kill">failed</span>';
+    return '<span class="chip c-kill">killed (' + (p.exit_code == null ? "?" : p.exit_code) + ')</span>';
+  }
+
+  function fmtBytes(n){
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return (n / 1024).toFixed(1) + " KiB";
+    return (n / 1048576).toFixed(1) + " MiB";
+  }
+
+  function escapeHtml(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  function renderProcesses(){
+    if (!state.processes.length){
+      el.procBody.innerHTML =
+        '<tr class="emptyrow"><td colspan="5"><div class="emptybox">' +
+        '<p>No registered commands.</p>' +
+        '<button class="btn btn-primary" data-act="new">+ New command</button>' +
+        '</div></td></tr>';
+    } else {
+      el.procBody.innerHTML = state.processes.map(function(p){
+        var running = p.status === "running";
+        var up = running && p.started_at ? fmtDuration(Date.now() - Date.parse(p.started_at)) : "—";
+        // The second line normally carries the command. Two things can displace
+        // it, and both are things the old screen had no way of showing at all:
+        // the reason a start failed, and a registration the server could not
+        // write down (it works now and is gone after a restart).
+        var sub = escapeHtml(p.cmd);
+        if (p.status === "failed" && p.error) sub = '<span class="warn">' + escapeHtml(p.error) + '</span>';
+        if (state.unpersisted[p.id]) sub += ' <span class="warn">· not saved — this entry disappears when the server restarts</span>';
+        return '<tr class="' + (p.id === state.selectedId ? "sel" : "") + '" data-id="' + p.id + '">' +
+          '<td class="name">' + escapeHtml(p.label) + '<span class="sub">' + sub + '</span></td>' +
+          '<td>' + statusChip(p) + '</td>' +
+          '<td class="pid col-pid">' + (p.pid != null && running ? p.pid : "—") + '</td>' +
+          '<td class="up col-up">' + up + '</td>' +
+          '<td><div class="ops">' +
+            '<button class="op edit" data-act="edit" title="Edit this command">✎</button>' +
+            '<button class="op run" data-act="run" title="Run / resume this command" ' + (running ? "disabled" : "") + '>▶</button>' +
+            '<button class="op stop" data-act="stop" title="Stop" ' + (running ? "" : "disabled") + '>■</button>' +
+            '<button class="op restart" data-act="restart" title="Restart">↻</button>' +
+          '</div></td></tr>';
+      }).join("");
+    }
+    var sel = findProcess(state.selectedId);
+    el.selName.textContent = sel ? sel.label : "No selection";
+    el.selBar.classList.toggle("none", !sel);
+    el.deleteBtn.disabled = !sel;
+  }
+
+  function refreshProcesses(){
+    return api("/processes").then(function(data){
+      state.processes = data.processes;
+      markOnline();
+      showError("");
+      // A selection can outlive the entry it points at (server restarted with a fresh
+      // id space, or the entry was deleted elsewhere). Drop it, otherwise the row
+      // actions and the log poller keep addressing an id the server no longer knows.
+      if (state.selectedId && !findProcess(state.selectedId)){
+        clearSelection(true);
+        flashStatus("The selected command is gone.", "warn", 6000);
+      }
+      renderProcesses();
+      var sel = findProcess(state.selectedId);
+      if (sel) el.logTitle.innerHTML = 'Logs · <b>' + escapeHtml(sel.label) + '</b> (pid ' + (sel.pid != null ? sel.pid : "—") + ')';
+    }).catch(function(e){
+      if (e.network) markOffline();
+      else if (e.status === 401) markUnauthorised();
+      else { markOnline(); showError(e.message); }
+    });
+  }
+
+  function clearSelection(resetLog){
+    state.selectedId = null;
+    renderProcesses();
+    if (resetLog){
+      el.logTitle.innerHTML = "Logs · <b>—</b>";
+      el.logView.innerHTML = '<div class="placeholder">Select a process above to view logs.</div>';
+      el.logEnc.textContent = "";
+      el.logFromStartBtn.disabled = true;
+      state.logPaused = false;
+      state.logSticky = false;
+      setLogNotice("", false);
+    }
+  }
+
+  function selectProcess(id){
+    var p = findProcess(id);
+    if (!p) return;
+    state.selectedId = id;
+    // No offset on the first request: the server starts at the end of the file
+    // by itself. Selecting an entry is now one 256 KiB read, not one read of
+    // however large the log happens to have grown.
+    state.logOffset = null;
+    startLogStream();
+  }
+
+  // startLogStream throws away whatever was accumulated and asks again. Used by
+  // a fresh selection and by "From the start", which differ only in logOffset.
+  function startLogStream(){
+    state.logLines = [];
+    state.logPending = "";
+    state.logPaused = false;
+    state.logSticky = false;
+    setLogNotice("", false);
+    el.logEnc.textContent = "";
+    el.logView.innerHTML = '<div class="placeholder">Loading…</div>';
+    renderProcesses();
+    pollLog(true);
+  }
+
+  function setLogNotice(text, showMore){
+    el.logNoticeText.textContent = text || "";
+    el.logNotice.classList.toggle("on", !!text);
+    el.logMoreBtn.style.display = showMore ? "" : "none";
+  }
+
+  function appendLogText(text){
+    var combined = state.logPending + text;
+    var lines = combined.split("\n");
+    state.logPending = lines.pop();
+    if (lines.length){
+      state.logLines = state.logLines.concat(lines);
+      trimLogLines();
+    }
+  }
+
+  function trimLogLines(){
+    if (state.maxLines > 0 && state.logLines.length > state.maxLines){
+      state.logLines = state.logLines.slice(-state.maxLines);
+    }
+  }
+
+  function renderLogView(){
+    var text = state.logLines.join("\n");
+    if (state.logPending) text += (text ? "\n" : "") + state.logPending;
+    el.logView.textContent = text;
+  }
+
+  function pollLog(force){
+    if (!state.selectedId) return;
+    if (state.authRequired) return;
+    if (state.logPaused && !force) return;
+    if (!state.connected && !force) return;
+    var id = state.selectedId;
+    // An absent offset is not the same request as offset=0. The first means
+    // "the end of the file", the second means "all of it" — and the second is
+    // the one the user has to ask for.
+    var path = "/processes/" + id + "/logs";
+    if (state.logOffset !== null) path += "?offset=" + state.logOffset;
+    api(path).then(function(data){
+      if (id !== state.selectedId) return;  // selection changed while the request was in flight
+      markOnline();
+      if (data.reset){
+        // The file was rotated out from under this offset. Appending what comes
+        // back would splice the head of the new file onto the tail of the old
+        // one and read as corruption; the only correct move is to redraw.
+        state.logLines = [];
+        state.logPending = "";
+        state.logSticky = true;
+        setLogNotice("The log was rotated — earlier output is in the archive files (logs/" + id + ".log.1 …).", false);
+      }
+      if (data.text){
+        appendLogText(data.text);
+        renderLogView();
+        if (state.autoscroll) el.logView.scrollTop = el.logView.scrollHeight;
+      } else if (!state.logLines.length && !state.logPending) {
+        el.logView.innerHTML = '<div class="placeholder">(No log output yet)</div>';
+      }
+      state.logOffset = data.next_offset;
+      state.logSize = data.size;
+      el.logEnc.textContent = data.encoding ? data.encoding : "";
+
+      if (data.truncated){
+        // The response limit stopped the read, so nothing is lost — the rest is
+        // behind next_offset. Polling stops here until the button is pressed.
+        state.logPaused = true;
+        state.logSticky = false;
+        // size 0 cannot happen alongside truncated, but the guard is here
+        // because it is the same expression the contract calls out (E-12).
+        var pct = data.size === 0 ? 100 : Math.floor((data.next_offset / data.size) * 100);
+        setLogNotice("Showing " + fmtBytes(data.next_offset) + " of " + fmtBytes(data.size) + " (" + pct + "%).", true);
+      } else if (!state.logSticky){
+        setLogNotice("", false);
+      }
+      el.logFromStartBtn.disabled = false;
+    }).catch(function(e){
+      if (e.network){ markOffline(); return; }
+      if (e.status === 401){ markUnauthorised(); return; }
+      if (e.status === 404){
+        // The entry vanished (server restarted, or it was deleted). Stop polling a
+        // dead id instead of blinking a 404 into the error banner every second.
+        if (id === state.selectedId){
+          clearSelection(true);
+          flashStatus("That command has already been deleted.", "warn", 6000);
+        }
+        return;
+      }
+      showError(e.message);
+    });
+  }
+
+  /* ── New / Edit dialog ──
+     Registering an entry always starts it (the server has no "stopped" register-only
+     mode), so the New dialog offers only Save & Run. Editing an existing entry can
+     save settings without restarting it (Save) or save and restart it immediately
+     (Save & Restart) — the server applies edited settings on the next restart either way. */
+  function openForm(mode, p){
+    dlg.mode = mode;
+    dlg.editingId = p ? p.id : null;
+    dlg.dirty = false;
+    el.dlgTitle.textContent = mode === "edit" ? "Edit command" : "New command";
+    el.fLabel.value = p ? (p.label || "") : "";
+    el.fCmd.value = p ? (p.cmd || "") : "";
+    el.fCwd.value = p ? (p.cwd || "") : "";
+    el.fEnv.value = p ? envText(p.env) : "";
+    el.dlgSave.style.display = mode === "edit" ? "" : "none";
+    el.dlgSaveRun.textContent = mode === "edit" ? "Save & Restart" : "Save & Run";
+    setNote("Clicking the backdrop does not close this", false);
+    el.formBackdrop.classList.add("open");
+    autoGrowCmd();
+    el.fCmd.focus();
+  }
+  function setNote(msg, warn){
+    el.dlgNote.textContent = msg;
+    el.dlgNote.classList.toggle("warn", !!warn);
+  }
+  function closeForm(){
+    el.formBackdrop.classList.remove("open");
+    dlg.dirty = false;
+  }
+  // Every close path funnels through here: if the fields were edited, confirm once
+  // before discarding (an accidental Esc or ✕ should not silently drop typed input).
+  function requestClose(){
+    if (!dlg.dirty){ closeForm(); return; }
+    askConfirm("Discard changes", "This will close <b>without saving</b> your changes.", "Discard", function(){
+      closeForm();
+    });
+  }
+  function nudge(){
+    el.formDlg.classList.remove("nudge");
+    void el.formDlg.offsetWidth;
+    el.formDlg.classList.add("nudge");
+    setNote("Clicking the backdrop does not close this dialog — use ✕ / Cancel / Esc", true);
+  }
+
+  function askConfirm(title, bodyHtml, yesLabel, onYes){
+    el.confirmTitle.textContent = title;
+    el.confirmBody.innerHTML = bodyHtml;
+    el.confirmYes.textContent = yesLabel;
+    confirmAction = onYes;
+    el.confirmBackdrop.classList.add("open");
+  }
+  function closeConfirm(){
+    el.confirmBackdrop.classList.remove("open");
+    confirmAction = null;
+  }
+
+  // `persisted` is only ever seen on a register or an update response — the
+  // listing does not repeat it — so the answer is remembered here. A false means
+  // the row on screen is real and running but has no database row behind it, and
+  // the user is the only one who can decide what to do about that.
+  function notePersistence(data){
+    if (!data.process) return;
+    if (data.persisted === false){
+      state.unpersisted[data.process.id] = true;
+      flashStatus("Saved to disk failed — this entry disappears when the server restarts.", "warn", 10000);
+    } else {
+      delete state.unpersisted[data.process.id];
+    }
+  }
+
+  function saveForm(alsoRun){
+    var cmd = el.fCmd.value.trim();
+    if (!cmd){ setNote("Enter a command.", true); el.fCmd.focus(); return; }
+    var payload = {
+      label: el.fLabel.value.trim() || undefined,
+      cmd: cmd,
+      cwd: el.fCwd.value.trim() || undefined,
+      env: parseEnv(el.fEnv.value),
+    };
+    el.dlgSave.disabled = true;
+    el.dlgSaveRun.disabled = true;
+    var request;
+    if (dlg.mode === "edit"){
+      request = api("/processes/" + dlg.editingId, { method: "PUT", body: payload })
+        .then(function(putData){
+          return alsoRun ? api("/processes/" + dlg.editingId + "/restart", { method: "POST" }) : putData;
+        })
+        .then(function(data){
+          closeForm();
+          showError("");
+          flashStatus(alsoRun ? "Saved · restarted" : "Saved", "ok", 3000);
+          notePersistence(data);
+          upsertProcess(data.process);
+          selectProcess(dlg.editingId);
+          refreshProcesses();
+        });
+    } else {
+      request = api("/processes", { method: "POST", body: payload }).then(function(data){
+        closeForm();
+        showError("");
+        flashStatus("Registered · " + data.process.status, "ok", 3000);
+        notePersistence(data);
+        upsertProcess(data.process);
+        selectProcess(data.process.id);
+        refreshProcesses();
+      });
+    }
+    request.catch(function(e){ setNote(e.message, true); })
+      .then(function(){ el.dlgSave.disabled = false; el.dlgSaveRun.disabled = false; });
+  }
+
+  /* ── wiring ── */
+  el.newBtn.addEventListener("click", function(){ openForm("new", null); });
+
+  el.deleteBtn.addEventListener("click", function(){
+    var p = findProcess(state.selectedId);
+    if (!p) return;
+    askConfirm("Delete command", "<b>" + escapeHtml(p.label) + "</b> and its logs will be deleted.", "Delete", function(){
+      var id = p.id;
+      api("/processes/" + id, { method: "DELETE" })
+        .then(function(){
+          delete state.unpersisted[id];
+          clearSelection(true);
+          showError("");
+          refreshProcesses();
+        })
+        .catch(function(e){
+          if (e.status === 401){ markUnauthorised(); return; }
+          if (e.status === 404){
+            delete state.unpersisted[id];
+            clearSelection(true);
+            flashStatus("That command has already been deleted.", "warn", 6000);
+            refreshProcesses();
+            return;
+          }
+          showError(e.message);
+        });
+    });
+  });
+
+  el.procBody.addEventListener("click", function(ev){
+    if (ev.target.getAttribute("data-act") === "new"){ openForm("new", null); return; }
+    var btn = ev.target.closest("button.op");
+    var row = ev.target.closest("tr[data-id]");
+    if (!row) return;
+    var id = row.getAttribute("data-id");
+    var p = findProcess(id);
+    if (!p) return;
+    if (btn){
+      ev.stopPropagation();
+      if (btn.disabled) return;
+      var act = btn.getAttribute("data-act");
+      if (act === "edit"){
+        selectProcess(id);
+        openForm("edit", p);
+        return;
+      }
+      api("/processes/" + id + "/" + act, { method: "POST" })
+        .then(function(){
+          showError("");
+          // run and restart write a marker into the child log; fetching once
+          // now shows it without waiting for the next second to come round.
+          if (id === state.selectedId) pollLog(true);
+          refreshProcesses();
+        })
+        .catch(function(e){
+          if (e.status === 401){ markUnauthorised(); return; }
+          if (e.status === 404){
+            if (id === state.selectedId) clearSelection(true);
+            flashStatus("That command has already been deleted.", "warn", 6000);
+            refreshProcesses();
+            return;
+          }
+          showError(e.message);
+        });
+      return;
+    }
+    selectProcess(id);
+  });
+
+  [el.fLabel, el.fCmd, el.fCwd, el.fEnv].forEach(function(input){
+    input.addEventListener("input", function(){
+      dlg.dirty = true;
+      setNote("Clicking the backdrop does not close this", false);
+    });
+  });
+
+  el.dlgClose.addEventListener("click", requestClose);
+  el.dlgCancel.addEventListener("click", requestClose);
+  el.dlgSave.addEventListener("click", function(){ saveForm(false); });
+  el.dlgSaveRun.addEventListener("click", function(){ saveForm(true); });
+
+  // The core rule of this dialog: a backdrop click never closes it.
+  el.formBackdrop.addEventListener("mousedown", function(ev){
+    if (ev.target === el.formBackdrop){ ev.preventDefault(); nudge(); }
+  });
+  el.confirmBackdrop.addEventListener("mousedown", function(ev){
+    if (ev.target === el.confirmBackdrop){
+      ev.preventDefault();
+      el.confirmDlg.classList.remove("nudge");
+      void el.confirmDlg.offsetWidth;
+      el.confirmDlg.classList.add("nudge");
+    }
+  });
+  el.confirmNo.addEventListener("click", closeConfirm);
+  el.confirmYes.addEventListener("click", function(){
+    var fn = confirmAction;
+    closeConfirm();
+    if (fn) fn();
+  });
+
+  document.addEventListener("keydown", function(ev){
+    if (ev.key !== "Escape") return;
+    if (el.confirmBackdrop.classList.contains("open")){ closeConfirm(); return; }
+    if (el.formBackdrop.classList.contains("open")) requestClose();
+  });
+
+  // Reading a whole log from the beginning is a deliberate act, not a default.
+  // The server answers it a megabyte at a time and says how far it got.
+  el.logFromStartBtn.addEventListener("click", function(){
+    if (!state.selectedId) return;
+    state.logOffset = 0;
+    startLogStream();
+  });
+
+  el.logMoreBtn.addEventListener("click", function(){
+    state.logPaused = false;
+    pollLog(true);
+  });
+
+  el.autoscrollToggle.addEventListener("click", function(){
+    state.autoscroll = !state.autoscroll;
+    el.autoscrollToggle.classList.toggle("on", state.autoscroll);
+    el.autoscrollToggle.classList.toggle("off", !state.autoscroll);
+  });
+
+  el.maxLinesSelect.addEventListener("change", function(){
+    var n = parseInt(el.maxLinesSelect.value, 10);
+    state.maxLines = isNaN(n) ? 0 : n;
+    saveMaxLines(state.maxLines);
+    if (state.selectedId && (state.logLines.length || state.logPending)){
+      trimLogLines();
+      renderLogView();
+      if (state.autoscroll) el.logView.scrollTop = el.logView.scrollHeight;
+    }
+  });
+
+  // Self-scheduling instead of setInterval: the delay grows while the server is
+  // unreachable and snaps back to POLL_BASE_MS as soon as it answers again.
+  function refreshLoop(){
+    refreshProcesses().then(function(){
+      if (state.authRequired) return;
+      clearTimeout(state.refreshTimer);
+      state.refreshTimer = setTimeout(refreshLoop, state.pollDelay);
+    });
+  }
+
+  refreshLoop();
+  setInterval(function(){ pollLog(false); }, 1000);
+  setInterval(function(){
+    if (state.connected && state.processes.some(function(p){ return p.status === "running"; })) renderProcesses();
+  }, 1000);
+})();
+</script>
+
+</body>
+</html>
