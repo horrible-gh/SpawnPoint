@@ -68,10 +68,12 @@ func TestByteIdentityAgainstDesignTable(t *testing.T) {
 	}
 }
 
-// TestByteIdentityAgainstPythonReference compares against what the current
-// implementation actually handed to CreateProcess, captured by
-// tools/pyref/dump_command_lines.py. The design table is a transcription; this
-// is the measurement, and it is the one that decides portability.
+// TestByteIdentityAgainstPythonReference compares against what the previous
+// implementation actually handed to CreateProcess, captured by intercepting the
+// call. The design table is a transcription; this is the measurement, and it is
+// the one that decides portability. The capture tool is gone with the
+// implementation it measured — testdata/python_reference.json is a fixed
+// contract value now, not a regenerated one.
 func TestByteIdentityAgainstPythonReference(t *testing.T) {
 	comspec, reference := loadPythonReference(t)
 	if comspec == "" {

@@ -4,8 +4,8 @@
 // and none will be added: 0008-L 2.14 relies on the command line being free so
 // the executable can decide service mode versus console mode by asking the
 // operating system, and 0004-NR F10 recorded the env-only contract as current
-// behaviour. Defaults and parsing rules match the Python entry point
-// (app/main.py) so an existing deployment keeps working unchanged.
+// behaviour. Defaults and parsing rules match the previous entry point so an
+// existing deployment keeps working unchanged.
 package config
 
 import (
@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-// Defaults, identical to app/main.py.
+// Defaults, identical to the previous entry point's.
 const (
 	DefaultHost   = "127.0.0.1"
 	DefaultPort   = 8091
@@ -107,7 +107,7 @@ func setting(getenv func(string) string, name string) (string, bool) {
 	return v, true
 }
 
-// splitTokens matches app/main.py `_tokens_from_env`: comma separated, trimmed,
+// splitTokens matches the previous `_tokens_from_env`: comma separated, trimmed,
 // blanks dropped. Order is preserved but never relied upon.
 func splitTokens(raw string) []string {
 	var tokens []string
@@ -119,7 +119,7 @@ func splitTokens(raw string) []string {
 	return tokens
 }
 
-// truthy matches app/main.py `_kill_children_on_exit`: anything except the five
+// truthy matches the previous `_kill_children_on_exit`: anything except the five
 // negative spellings enables the behaviour.
 func truthy(raw string) bool {
 	switch strings.ToLower(raw) {

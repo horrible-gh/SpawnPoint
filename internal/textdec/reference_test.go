@@ -6,26 +6,20 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
 )
 
-// The rewrite's decoder has to read back what the deployed one wrote, and the
-// files it will be pointed at were written by the deployed one. So the contract
-// is not "these bytes are CP949" but "this is the text the current
-// implementation would show" — which is why the fixture is a capture of
-// spawnpoint/runner.py read_log() rather than a table written by hand.
+// This decoder has to read back what the previous implementation wrote, and the
+// files it will be pointed at were written by that one. So the contract is not
+// "these bytes are CP949" but "this is the text the previous implementation
+// showed" — which is why the fixture is a capture of its log reader rather than
+// a table written by hand.
 //
-// tools/pyref/dump_decode.py regenerates it:
-//
-//	python tools/pyref/dump_decode.py > internal/textdec/testdata/python_reference.json
+// The capture is a fixed contract value now. The implementation it was taken
+// from has been removed, so the file is no longer regenerated: it records what
+// the deployed decoder did, and that answer does not change.
 
 const referencePath = "testdata/python_reference.json"
-
-// liveEnv gates the test that runs Python, the same switch the store's
-// reference test uses. An ordinary `go test ./...` needs no Python.
-const liveEnv = "SPAWNPOINT_LIVE_PYREF"
 
 type reference struct {
 	ANSICodePage uint32          `json:"ansi_code_page"`
@@ -123,37 +117,5 @@ func TestMatchesThePythonReader(t *testing.T) {
 				t.Errorf("text %q, want %q", got.Text, c.Text)
 			}
 		})
-	}
-}
-
-// TestReferenceIsCurrent catches the fixture drifting away from the
-// implementation it was captured from. Without it every case above could keep
-// passing against a stale file.
-func TestReferenceIsCurrent(t *testing.T) {
-	if os.Getenv(liveEnv) == "" {
-		t.Skipf("set %s=1 to regenerate the reference and compare", liveEnv)
-	}
-	script := filepath.Join("..", "..", "tools", "pyref", "dump_decode.py")
-	out, err := exec.Command("python", script).Output()
-	if err != nil {
-		t.Fatalf("run %s: %v", script, err)
-	}
-	var fresh reference
-	if err := json.Unmarshal(out, &fresh); err != nil {
-		t.Fatalf("parse the fresh capture: %v", err)
-	}
-	stored := loadReference(t)
-	if fresh.ANSICodePage != stored.ANSICodePage {
-		t.Skipf("captured on ANSI code page %d, stored is %d", fresh.ANSICodePage, stored.ANSICodePage)
-	}
-	if len(fresh.Cases) != len(stored.Cases) {
-		t.Fatalf("the capture has %d cases, the stored file %d — regenerate it",
-			len(fresh.Cases), len(stored.Cases))
-	}
-	for i, c := range fresh.Cases {
-		s := stored.Cases[i]
-		if c != s {
-			t.Errorf("case %q drifted:\n fresh  %+v\n stored %+v", c.Name, c, s)
-		}
 	}
 }
