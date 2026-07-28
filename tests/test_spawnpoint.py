@@ -102,7 +102,7 @@ class TestScenario2Invalid(SpawnTestBase):
         self.assertEqual(res["error"]["field"], "requester")
 
     def test_label_too_long(self):
-        res = self.call(self.base_request(options={"label": "y" * 129}))
+        res = self.call(self.base_request(options={"label": "y" * 257}))
         self.assertEqual(res["error"]["field"], "options.label")
 
     def test_ttl_below_min(self):

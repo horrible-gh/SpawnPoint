@@ -1,0 +1,12 @@
+{
+  "_generator": "tools/pyref/dump_command_lines.py",
+  "_python": "3.14.2",
+  "comspec": "C:\\windows\\system32\\cmd.exe",
+  "command_lines": {
+    "proc_45c05b99": "C:\\windows\\system32\\cmd.exe /c \"chcp 65001 >nul & powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\stg\\flowgate.ps1\"\"",
+    "proc_f6aa7819": "C:\\windows\\system32\\cmd.exe /c \"chcp 65001 >nul & powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\dev\\preview-flowgate.ps1\" 0340\"",
+    "proc_ca2f42ed": "C:\\windows\\system32\\cmd.exe /c \"chcp 65001 >nul & powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\stg\\mirage.ps1\"\"",
+    "proc_f8470a37": "C:\\windows\\system32\\cmd.exe /c \"chcp 65001 >nul & powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\dev\\preview-spawnpoint.ps1\" 0109\"",
+    "proc_2bbd0c5b": "C:\\windows\\system32\\cmd.exe /c \"chcp 65001 >nul & powershell -ExecutionPolicy RemoteSigned -File \"C:\\workspace\\projects\\webservices\\dev\\preview-mirage.ps1\"\""
+  }
+}
