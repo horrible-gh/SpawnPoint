@@ -25,7 +25,7 @@ go build -trimpath -o dist/spawnpoint.exe ./cmd/spawnpoint
 .\dist\spawnpoint.exe
 ```
 
-The server starts on `http://127.0.0.1:8091` by default:
+The server starts on `http://127.0.0.1:7527` by default:
 
 - Runner UI: `GET /`
 - Health check: `GET /healthz`
@@ -38,7 +38,7 @@ The program has no command-line options; everything is configured through enviro
 
 ```powershell
 $env:SPAWNPOINT_HOST = '127.0.0.1'
-$env:SPAWNPOINT_PORT = '8091'
+$env:SPAWNPOINT_PORT = '7527'
 $env:SPAWNPOINT_DB_PATH = 'C:\ProgramData\SpawnPoint\spawnpoint.db'
 $env:SPAWNPOINT_LOG_DIR = 'C:\ProgramData\SpawnPoint\logs'
 .\dist\spawnpoint.exe
@@ -57,7 +57,7 @@ $env:SPAWNPOINT_DB_PATH = 'C:\ProgramData\SpawnPoint\spawnpoint.db'
 | Variable | Default | Description |
 | --- | --- | --- |
 | `SPAWNPOINT_HOST` | `127.0.0.1` | HTTP bind address |
-| `SPAWNPOINT_PORT` | `8091` | HTTP port |
+| `SPAWNPOINT_PORT` | `7527` | HTTP port |
 | `SPAWNPOINT_DB_PATH` | `spawnpoint.db` | SQLite database path |
 | `SPAWNPOINT_LOG_DIR` | `logs` | Runner process log directory |
 | `SPAWNPOINT_API_TOKENS` | unset | Comma-separated allowed Bearer tokens; auth is disabled when unset |
@@ -213,7 +213,7 @@ sc.exe create SpawnPoint binPath= "`"$exe`"" start= auto DisplayName= "SpawnPoin
 $serviceKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\SpawnPoint'
 $serviceEnvironment = @(
   'SPAWNPOINT_HOST=0.0.0.0'
-  'SPAWNPOINT_PORT=8091'
+  'SPAWNPOINT_PORT=7527'
   'SPAWNPOINT_DB_PATH=C:\ProgramData\SpawnPoint\spawnpoint.db'
   'SPAWNPOINT_LOG_DIR=C:\ProgramData\SpawnPoint\logs'
   'SPAWNPOINT_API_TOKENS='

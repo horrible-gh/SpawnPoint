@@ -19,7 +19,7 @@ import (
 // Defaults, identical to the previous entry point's.
 const (
 	DefaultHost   = "127.0.0.1"
-	DefaultPort   = 8091
+	DefaultPort   = 7527
 	DefaultDBPath = "spawnpoint.db"
 	DefaultLogDir = "logs"
 )

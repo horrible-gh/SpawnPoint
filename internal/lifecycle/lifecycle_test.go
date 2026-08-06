@@ -82,7 +82,7 @@ func (h *harness) events() []string {
 func defaultConfig() config.Config {
 	return config.Config{
 		Host:               "0.0.0.0",
-		Port:               8091,
+		Port:               7527,
 		DBPath:             "spawnpoint.db",
 		LogDir:             "logs",
 		KillChildrenOnExit: true,
@@ -96,7 +96,7 @@ func fullHooks(h *harness) Hooks {
 		OpenDatabase:    func() error { h.record("open db"); return nil },
 		ApplyMigrations: func() (int, int, error) { h.record("migrations"); return 2, 0, nil },
 		RestoreEntries:  func() (int, error) { h.record("restore"); return 5, nil },
-		Bind:            func() (string, error) { h.record("bind"); return "http://0.0.0.0:8091", nil },
+		Bind:            func() (string, error) { h.record("bind"); return "http://0.0.0.0:7527", nil },
 		Serve: func(stop <-chan struct{}) error {
 			h.record("serve")
 			<-stop
@@ -139,10 +139,10 @@ func TestStartupSequence(t *testing.T) {
 		t.Fatalf("Startup failed with %d", code)
 	}
 	want := []string{
-		"INFO start host=0.0.0.0 port=8091 db=spawnpoint.db auth=disabled",
+		"INFO start host=0.0.0.0 port=7527 db=spawnpoint.db auth=disabled",
 		"INFO migrations applied=2 pending=0",
 		"INFO runner restored entries=5 status=stopped",
-		"INFO listening http://0.0.0.0:8091",
+		"INFO listening http://0.0.0.0:7527",
 	}
 	if got := h.events(); !slices.Equal(got, want) {
 		t.Fatalf("startup records =\n%s\nwant\n%s",
@@ -421,8 +421,8 @@ func TestBindFailureRecordsBindFailedAndExits(t *testing.T) {
 		t.Fatalf("Startup = (%d, %v), want (%d, false)", code, ok, ExitStartFailed)
 	}
 	want := []string{
-		"INFO start host=0.0.0.0 port=8091 db=spawnpoint.db auth=disabled",
-		`ERROR bind_failed host=0.0.0.0 port=8091 detail="only one usage of each socket address is normally permitted"`,
+		"INFO start host=0.0.0.0 port=7527 db=spawnpoint.db auth=disabled",
+		`ERROR bind_failed host=0.0.0.0 port=7527 detail="only one usage of each socket address is normally permitted"`,
 		"ERROR exiting exit_code=1",
 	}
 	if got := h.events(); !slices.Equal(got, want) {
@@ -491,7 +491,7 @@ func TestNilHooksAreSkipped(t *testing.T) {
 		t.Fatalf("Shutdown = %d", code)
 	}
 	want := []string{
-		"INFO start host=0.0.0.0 port=8091 db=spawnpoint.db auth=disabled",
+		"INFO start host=0.0.0.0 port=7527 db=spawnpoint.db auth=disabled",
 		"INFO stopping reason=signal",
 		"INFO stopped exit_code=0",
 	}
