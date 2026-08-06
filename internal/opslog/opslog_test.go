@@ -53,19 +53,19 @@ func TestShutdownRecordsMatchProtocolExample(t *testing.T) {
 // address with no key.
 func TestStartupRecordsMatchProtocolExample(t *testing.T) {
 	l, path := open(t)
-	l.Log(Info, "start", F("host", "0.0.0.0"), F("port", 8091),
+	l.Log(Info, "start", F("host", "0.0.0.0"), F("port", 7527),
 		F("db", "spawnpoint.db"), F("auth", "disabled"))
 	l.Log(Info, "migrations", F("applied", 2), F("pending", 0))
 	l.Log(Info, "runner restored", F("entries", 5), F("status", "stopped"))
-	l.Log(Info, "listening", V("http://0.0.0.0:8091"))
+	l.Log(Info, "listening", V("http://0.0.0.0:7527"))
 	l.Close()
 
 	got := read(t, path)
 	for _, want := range []string{
-		"INFO start host=0.0.0.0 port=8091 db=spawnpoint.db auth=disabled\n",
+		"INFO start host=0.0.0.0 port=7527 db=spawnpoint.db auth=disabled\n",
 		"INFO migrations applied=2 pending=0\n",
 		"INFO runner restored entries=5 status=stopped\n",
-		"INFO listening http://0.0.0.0:8091\n",
+		"INFO listening http://0.0.0.0:7527\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("log missing %q\ngot:\n%s", want, got)
@@ -83,7 +83,7 @@ func TestValueQuoting(t *testing.T) {
 		{"service_control", "service_control"},
 		{nil, "null"},
 		{0, "0"},
-		{8091, "8091"},
+		{7527, "7527"},
 		{true, "true"},
 		{"only one usage of each socket address", `"only one usage of each socket address"`},
 		{`say "hi"`, `"say \"hi\""`},
@@ -101,12 +101,12 @@ func TestValueQuoting(t *testing.T) {
 // A quoted value must not swallow the following field.
 func TestQuotedValueKeepsRecordParseable(t *testing.T) {
 	l, path := open(t)
-	l.Log(Error, "bind_failed", F("host", "0.0.0.0"), F("port", 8091),
+	l.Log(Error, "bind_failed", F("host", "0.0.0.0"), F("port", 7527),
 		F("detail", "only one usage of each socket address is normally permitted"))
 	l.Close()
 
 	line := strings.TrimSuffix(read(t, path), "\n")
-	want := `2026-07-28T18:12:41.006000+09:00 ERROR bind_failed host=0.0.0.0 port=8091 ` +
+	want := `2026-07-28T18:12:41.006000+09:00 ERROR bind_failed host=0.0.0.0 port=7527 ` +
 		`detail="only one usage of each socket address is normally permitted"`
 	if line != want {
 		t.Fatalf("record = %q\nwant      %q", line, want)

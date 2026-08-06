@@ -16,8 +16,8 @@ func TestDefaultsMatchPythonEntryPoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if cfg.Host != "127.0.0.1" || cfg.Port != 8091 {
-		t.Errorf("address = %s, want 127.0.0.1:8091", cfg.Address())
+	if cfg.Host != "127.0.0.1" || cfg.Port != 7527 {
+		t.Errorf("address = %s, want 127.0.0.1:7527", cfg.Address())
 	}
 	if cfg.DBPath != "spawnpoint.db" || cfg.LogDir != "logs" {
 		t.Errorf("paths = %q %q, want spawnpoint.db logs", cfg.DBPath, cfg.LogDir)
@@ -33,7 +33,7 @@ func TestDefaultsMatchPythonEntryPoint(t *testing.T) {
 func TestAllValuesRead(t *testing.T) {
 	cfg, err := load(env(map[string]string{
 		EnvHost:               "0.0.0.0",
-		EnvPort:               "8091",
+		EnvPort:               "7527",
 		EnvDBPath:             `C:\var\spawnpoint.db`,
 		EnvLogDir:             `C:\var\logs`,
 		EnvAPITokens:          "tok-a,tok-b",
@@ -42,7 +42,7 @@ func TestAllValuesRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if cfg.Address() != "0.0.0.0:8091" {
+	if cfg.Address() != "0.0.0.0:7527" {
 		t.Errorf("Address = %q", cfg.Address())
 	}
 	if cfg.DBPath != `C:\var\spawnpoint.db` || cfg.LogDir != `C:\var\logs` {
