@@ -73,6 +73,20 @@ func (f *fakeRunner) Register(label, cmd string, cwd *string, env map[string]str
 	return info, f.persisted
 }
 
+func (f *fakeRunner) RegisterOnly(label, cmd string, cwd *string, env map[string]string) (runner.Info, bool) {
+	f.calls = append(f.calls, "register_only")
+	f.lastName, f.lastCmd, f.lastCwd, f.lastEnv = label, cmd, cwd, env
+	if f.registerAs != nil {
+		return *f.registerAs, f.persisted
+	}
+	info := runner.Info{
+		ID: "proc_2bbd0c5b", Label: label, Cmd: cmd, Cwd: cwd, Env: env,
+		Status: runner.StatusStopped,
+	}
+	f.entries = append(f.entries, info)
+	return info, f.persisted
+}
+
 func (f *fakeRunner) Update(id string, label, cmd *string, cwd **string, env map[string]string) (runner.Info, bool, bool) {
 	f.calls = append(f.calls, "update")
 	info, ok := f.find(id)

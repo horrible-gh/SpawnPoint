@@ -153,6 +153,31 @@ func TestPersistFailureIsReportedButDoesNotBlockTheStart(t *testing.T) {
 	}
 }
 
+// spawnpoint.default.0014.0003-NR, 영향 범위 2: RegisterOnly saves the entry
+// exactly like Register does, but never spawns it.
+func TestRegisterOnlyLeavesTheEntryStopped(t *testing.T) {
+	registry := &fakeRegistry{}
+	m, dir := testManager(t, registry)
+
+	info, persisted := m.RegisterOnly("saved", "echo hello", nil, nil)
+
+	if !persisted {
+		t.Error("persisted = false, want true")
+	}
+	if info.Status != StatusStopped {
+		t.Errorf("status = %q, want %q", info.Status, StatusStopped)
+	}
+	if info.PID != nil || info.StartedAt != nil {
+		t.Errorf("pid = %v, started_at = %v, want both null", info.PID, info.StartedAt)
+	}
+	if len(registry.saved) != 1 {
+		t.Errorf("saved %d times, want 1", len(registry.saved))
+	}
+	if got := opsLog(t, dir); strings.Contains(got, "child started") {
+		t.Errorf("a register-only save started the child:\n%s", got)
+	}
+}
+
 // 0008-L 6.5 / 2.15: restored entries come back registered and nothing more.
 // The pid recorded before a restart cannot be shown to still belong to the
 // command it was recorded against, so none of it is restored.

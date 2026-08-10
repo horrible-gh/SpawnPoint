@@ -109,6 +109,34 @@ func TestLiveRegisterStartsTheChild(t *testing.T) {
 	}
 }
 
+// spawnpoint.default.0014.0003-NR, 영향 범위 2: a register-only save leaves the
+// entry stopped with no pid, and a later Run starts it exactly like any other
+// stopped entry.
+func TestLiveRegisterOnlyThenRunStartsTheChild(t *testing.T) {
+	requireLiveSpawn(t)
+	m, _ := testManager(t, nil)
+
+	info, _ := m.RegisterOnly("sleeper", sleepFor(30*time.Second), nil, nil)
+	if info.Status != StatusStopped {
+		t.Fatalf("status = %q, want %q", info.Status, StatusStopped)
+	}
+	if info.PID != nil {
+		t.Fatalf("pid = %v, want nil", info.PID)
+	}
+
+	running, ok := m.Run(info.ID)
+	defer m.Stop(info.ID)
+	if !ok {
+		t.Fatal("run reported the entry as unknown")
+	}
+	if running.Status != StatusRunning {
+		t.Fatalf("status = %q (%s), want %q", running.Status, running.Error, StatusRunning)
+	}
+	if running.PID == nil || !alive(*running.PID) {
+		t.Fatalf("pid = %v, and it is not a running process", running.PID)
+	}
+}
+
 // 0008-L 2.5: the output arrives through a pipe the server owns, not by handing
 // the child the log file. That is the change that makes the file the server's
 // to manage (0006-D 2.1).

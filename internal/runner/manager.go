@@ -104,6 +104,24 @@ func (m *Manager) LogPath(id string) string {
 // could not be written would trade a recoverable loss for an immediate one. The
 // caller is told, through persisted, so the response can say so (E-21).
 func (m *Manager) Register(label, cmd string, cwd *string, env map[string]string) (Info, bool) {
+	return m.register(label, cmd, cwd, env, true)
+}
+
+// RegisterOnly adds a command without starting it.
+//
+// The entry comes out of registration as StatusStopped exactly like
+// Register's does; this simply withholds the spawn that Register always makes.
+// No separate "saved but not running" state is needed, because that state is
+// already what an entry has between being written and being started — a later
+// Run starts it the same way it would start any other stopped entry, restored
+// or otherwise (spawnpoint.default.0014.0003-NR, 영향 범위 2).
+func (m *Manager) RegisterOnly(label, cmd string, cwd *string, env map[string]string) (Info, bool) {
+	return m.register(label, cmd, cwd, env, false)
+}
+
+// register is shared by Register and RegisterOnly; start decides whether the
+// freshly saved entry is spawned.
+func (m *Manager) register(label, cmd string, cwd *string, env map[string]string, start bool) (Info, bool) {
 	now := time.Now()
 	e := &entry{
 		id:        m.newID(),
@@ -123,7 +141,9 @@ func (m *Manager) Register(label, cmd string, cwd *string, env map[string]string
 	persisted := m.persist(e)
 
 	e.mu.Lock()
-	m.spawn(e, "")
+	if start {
+		m.spawn(e, "")
+	}
 	info := e.infoLocked()
 	e.mu.Unlock()
 	return info, persisted
