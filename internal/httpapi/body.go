@@ -92,6 +92,16 @@ func asString(raw json.RawMessage) (string, bool) {
 	return s, true
 }
 
+// asBool decodes a JSON boolean. Anything else fails the same way asString
+// does for a field that must be exactly one JSON type.
+func asBool(raw json.RawMessage) (bool, bool) {
+	var b bool
+	if err := json.Unmarshal(raw, &b); err != nil {
+		return false, false
+	}
+	return b, true
+}
+
 // asStringMap decodes a JSON object whose every value is a string. JSON keys
 // are always strings, so only the values can fail the check that
 // 0008-L 4.1 words as "string keys and values".

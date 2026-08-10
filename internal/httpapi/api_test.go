@@ -169,6 +169,48 @@ func TestRegisterWithoutALabelUsesTheFirstWord(t *testing.T) {
 	}
 }
 
+// spawnpoint.default.0014.0003-NR, 영향 범위 1: `start: false` saves the
+// registration without starting it.
+func TestRegisterWithStartFalseDoesNotStartTheChild(t *testing.T) {
+	rn := &fakeRunner{persisted: true}
+	s := newTestServer(t, Options{Runner: rn})
+
+	status, body, _ := do(t, s, http.MethodPost, "/processes", `{"cmd": "powershell", "start": false}`)
+	if status != http.StatusOK {
+		t.Fatalf("status %d, want 200", status)
+	}
+	if !strings.Contains(body, `"status":"stopped"`) {
+		t.Errorf("response was not stopped: %s", body)
+	}
+	if len(rn.calls) != 1 || rn.calls[0] != "register_only" {
+		t.Errorf("calls = %v, want [register_only]", rn.calls)
+	}
+}
+
+// Omitting `start` keeps registering and starting in one call, unchanged.
+func TestRegisterWithoutStartFieldStillStartsTheChild(t *testing.T) {
+	rn := &fakeRunner{persisted: true}
+	s := newTestServer(t, Options{Runner: rn})
+
+	do(t, s, http.MethodPost, "/processes", `{"cmd": "powershell"}`)
+
+	if len(rn.calls) != 1 || rn.calls[0] != "register" {
+		t.Errorf("calls = %v, want [register]", rn.calls)
+	}
+}
+
+// `start` must be a boolean; it is validated after the existing fields because
+// it is not part of 0008-L 4.1's cmd/label/cwd/env order — it is new and
+// additive to that contract.
+func TestRegisterStartMustBeABoolean(t *testing.T) {
+	s := newTestServer(t, Options{Runner: &fakeRunner{persisted: true}})
+	status, body, _ := do(t, s, http.MethodPost, "/processes", `{"cmd": "powershell", "start": "yes"}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400", status)
+	}
+	wantBody(t, body, `{"ok": false, "error": {"code": "invalid_request", "field": "start", "message": "start must be a boolean."}}`)
+}
+
 // An empty working directory means the same thing as omitting it. Only one of
 // the two can be checked for existence, so they are made the same on the way in
 // (0007-P [새 명령 등록 — label 생략]).

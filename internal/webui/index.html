@@ -759,10 +759,11 @@
   }
 
   /* ── New / Edit dialog ──
-     Registering an entry always starts it (the server has no "stopped" register-only
-     mode), so the New dialog offers only Save & Run. Editing an existing entry can
-     save settings without restarting it (Save) or save and restart it immediately
-     (Save & Restart) — the server applies edited settings on the next restart either way. */
+     Registering an entry can either start it right away (Save & Run) or leave it
+     stopped (Save) — POST /processes accepts an optional start flag for this.
+     Editing an existing entry can save settings without restarting it (Save) or
+     save and restart it immediately (Save & Restart) — the server applies edited
+     settings on the next restart either way. */
   function openForm(mode, p){
     dlg.mode = mode;
     dlg.editingId = p ? p.id : null;
@@ -772,7 +773,7 @@
     el.fCmd.value = p ? (p.cmd || "") : "";
     el.fCwd.value = p ? (p.cwd || "") : "";
     el.fEnv.value = p ? envText(p.env) : "";
-    el.dlgSave.style.display = mode === "edit" ? "" : "none";
+    el.dlgSave.style.display = "";
     el.dlgSaveRun.textContent = mode === "edit" ? "Save & Restart" : "Save & Run";
     setNote("Clicking the backdrop does not close this", false);
     el.formBackdrop.classList.add("open");
@@ -855,10 +856,17 @@
           refreshProcesses();
         });
     } else {
-      request = api("/processes", { method: "POST", body: payload }).then(function(data){
+      var registerPayload = payload;
+      if (!alsoRun){
+        registerPayload = {
+          label: payload.label, cmd: payload.cmd, cwd: payload.cwd, env: payload.env,
+          start: false,
+        };
+      }
+      request = api("/processes", { method: "POST", body: registerPayload }).then(function(data){
         closeForm();
         showError("");
-        flashStatus("Registered · " + data.process.status, "ok", 3000);
+        flashStatus(alsoRun ? "Registered · " + data.process.status : "Saved", "ok", 3000);
         notePersistence(data);
         upsertProcess(data.process);
         selectProcess(data.process.id);

@@ -196,6 +196,11 @@ func (s *Server) serveRegister(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, *apiErr)
 		return
 	}
+	start, apiErr := parseStartFlag(obj)
+	if apiErr != nil {
+		s.fail(w, r, *apiErr)
+		return
+	}
 	if s.runner == nil {
 		s.fail(w, r, notFoundError(msgUnknownEndpoint))
 		return
@@ -207,8 +212,38 @@ func (s *Server) serveRegister(w http.ResponseWriter, r *http.Request) {
 	// [새 명령 등록 — 정상], 0004-NR F6). A start that fails is still a 200 —
 	// the registration succeeded, and the failure is carried by `status` and
 	// `error` instead.
-	info, persisted := s.runner.Register(reg.label, reg.cmd, reg.cwd, reg.env)
+	//
+	// `start: false` skips the start half of that call, leaving the entry
+	// registered and stopped — the register-only save the screen previously
+	// had no way to ask for (spawnpoint.default.0014.0003-NR, 영향 범위 1-2).
+	var (
+		info      runner.Info
+		persisted bool
+	)
+	if start {
+		info, persisted = s.runner.Register(reg.label, reg.cmd, reg.cwd, reg.env)
+	} else {
+		info, persisted = s.runner.RegisterOnly(reg.label, reg.cmd, reg.cwd, reg.env)
+	}
 	s.writeJSON(w, r, http.StatusOK, writeResponse{OK: true, Persisted: persisted, Process: toJSON(info)})
+}
+
+// parseStartFlag reads the optional `start` field of POST /processes. Omitted,
+// it defaults to true, so every existing caller keeps registering and starting
+// in one call unchanged (spawnpoint.default.0014.0003-NR, 영향 범위 1). It is
+// not part of validateRegistration's cmd/label/cwd/env order (0008-L 4.1):
+// that order is a fixed contract this field is not in, so it is checked on its
+// own after the existing fields have already validated.
+func parseStartFlag(obj map[string]json.RawMessage) (bool, *apiError) {
+	raw, ok := present(obj, "start")
+	if !ok {
+		return true, nil
+	}
+	start, ok := asBool(raw)
+	if !ok {
+		return false, ptr(invalidField("start", "start must be a boolean."))
+	}
+	return start, nil
 }
 
 // serveUpdate replaces a registration and leaves the process running.
