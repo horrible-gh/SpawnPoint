@@ -42,12 +42,13 @@ const RequestBodyMaxBytes = 65536
 // starting a process or opening a database.
 type Runner interface {
 	List() []runner.Info
+	Get(id string) (runner.Info, bool)
 	Register(label, cmd string, cwd *string, env map[string]string) (runner.Info, bool)
 	Update(id string, label, cmd *string, cwd **string, env map[string]string) (info runner.Info, persisted, found bool)
 	Run(id string) (runner.Info, bool)
 	Stop(id string) (runner.Info, bool)
 	Restart(id string) (runner.Info, bool)
-	Delete(id string) bool
+	Delete(id string) (persisted, found bool)
 	ReadLog(id, offsetParam string) (runner.LogView, bool)
 }
 
@@ -60,6 +61,7 @@ type Server struct {
 	// authentication, JSON decoding and field validation.
 	issuer Issuer
 	index  []byte
+	help   []byte
 	// tokens is the allowed Bearer list as a set. Empty means authentication is
 	// off, which is the local default and must stay that way (0007-P 0.1).
 	tokens map[string]struct{}
@@ -82,6 +84,9 @@ type Options struct {
 	// makes those two routes 404 — they are then not defined, so the reply is
 	// `Unknown endpoint.` and not an empty page.
 	Index []byte
+	// Help is the machine-readable API contract served on /help. A nil Help
+	// leaves that route undefined, matching the optional Index test wiring.
+	Help []byte
 	// StartedAt is what /healthz reports. Zero means "now".
 	StartedAt time.Time
 }
@@ -101,6 +106,7 @@ func New(opts Options) *Server {
 		runner:    opts.Runner,
 		issuer:    opts.Issuer,
 		index:     opts.Index,
+		help:      opts.Help,
 		tokens:    tokens,
 		startedAt: started,
 	}
@@ -145,6 +151,7 @@ const (
 	routeNone routeKind = iota
 	routeIndex
 	routeHealth
+	routeHelp
 	routeSpawn
 	routeProcesses
 	routeProcessItem
@@ -180,6 +187,11 @@ func (s *Server) resolve(path string) route {
 		return route{kind: routeIndex, methods: []string{http.MethodGet, http.MethodHead}}
 	case "/healthz":
 		return route{kind: routeHealth, methods: []string{http.MethodGet, http.MethodHead}}
+	case "/help":
+		if s.help == nil {
+			return route{}
+		}
+		return route{kind: routeHelp, methods: []string{http.MethodGet, http.MethodHead}}
 	case "/spawn":
 		return route{kind: routeSpawn, methods: []string{http.MethodPost}}
 	}
@@ -194,7 +206,7 @@ func (s *Server) resolve(path string) route {
 	case 2:
 		return route{
 			kind:    routeProcessItem,
-			methods: []string{http.MethodPut, http.MethodDelete},
+			methods: []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodDelete},
 			id:      parts[1],
 		}
 	case 3:
@@ -297,6 +309,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveIndex(w, r)
 	case routeHealth:
 		s.serveHealth(w, r)
+	case routeHelp:
+		s.serveHelp(w, r)
 	case routeSpawn:
 		s.serveSpawn(w, r)
 	case routeProcesses:
@@ -306,11 +320,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.serveList(w, r)
 		}
 	case routeProcessItem:
-		if r.Method == http.MethodPut {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead:
+			s.serveProcessGet(w, r, rt.id)
+		case http.MethodPut:
 			s.serveUpdate(w, r, rt.id)
-		} else {
+		case http.MethodDelete:
 			s.serveDelete(w, r, rt.id)
 		}
+		// All other methods have already returned 405 above.
 	case routeProcessAction:
 		s.serveAction(w, r, rt.id, rt.action)
 	case routeProcessLogs:

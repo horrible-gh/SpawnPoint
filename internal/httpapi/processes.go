@@ -63,6 +63,7 @@ type processResponse struct {
 
 type deleteResponse struct {
 	OK        bool   `json:"ok"`
+	Persisted bool   `json:"persisted"`
 	DeletedID string `json:"deleted_id"`
 }
 
@@ -275,19 +276,40 @@ func (s *Server) serveAction(w http.ResponseWriter, r *http.Request, id, action 
 	s.writeJSON(w, r, http.StatusOK, processResponse{OK: true, Process: toJSON(info)})
 }
 
+// --- GET|HEAD /processes/<id> -------------------------------------------------
+
+func (s *Server) serveProcessGet(w http.ResponseWriter, r *http.Request, id string) {
+	if s.runner == nil {
+		s.fail(w, r, notFoundError(msgProcessNotFound))
+		return
+	}
+	info, ok := s.runner.Get(id)
+	if !ok {
+		s.fail(w, r, notFoundError(msgProcessNotFound))
+		return
+	}
+	s.writeJSON(w, r, http.StatusOK, processResponse{OK: true, Process: toJSON(info)})
+}
+
 // --- DELETE /processes/<id> --------------------------------------------------
 
 // serveDelete removes the registration, the process and the logs.
 //
 // The reply has no `process` block. There is no longer a process to describe,
 // and sending its last known state would invite a caller to keep showing a row
-// for something that has been deleted (0007-P [삭제]).
+// for something that has been deleted (0007-P [삭제]). HTTP 200 reports the
+// current deletion; `persisted` reports whether it survives a restart.
 func (s *Server) serveDelete(w http.ResponseWriter, r *http.Request, id string) {
-	if s.runner == nil || !s.runner.Delete(id) {
+	if s.runner == nil {
 		s.fail(w, r, notFoundError(msgProcessNotFound))
 		return
 	}
-	s.writeJSON(w, r, http.StatusOK, deleteResponse{OK: true, DeletedID: id})
+	persisted, found := s.runner.Delete(id)
+	if !found {
+		s.fail(w, r, notFoundError(msgProcessNotFound))
+		return
+	}
+	s.writeJSON(w, r, http.StatusOK, deleteResponse{OK: true, Persisted: persisted, DeletedID: id})
 }
 
 func ptr(e apiError) *apiError { return &e }

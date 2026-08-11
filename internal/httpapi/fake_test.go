@@ -50,6 +50,11 @@ type fakeRunner struct {
 
 func (f *fakeRunner) List() []runner.Info { f.calls = append(f.calls, "list"); return f.entries }
 
+func (f *fakeRunner) Get(id string) (runner.Info, bool) {
+	f.calls = append(f.calls, "get")
+	return f.find(id)
+}
+
 func (f *fakeRunner) find(id string) (runner.Info, bool) {
 	for _, e := range f.entries {
 		if e.ID == id {
@@ -109,13 +114,13 @@ func (f *fakeRunner) Restart(id string) (runner.Info, bool) {
 	return f.find(id)
 }
 
-func (f *fakeRunner) Delete(id string) bool {
+func (f *fakeRunner) Delete(id string) (bool, bool) {
 	f.calls = append(f.calls, "delete")
 	if _, ok := f.find(id); !ok {
-		return false
+		return false, false
 	}
 	f.deleted = true
-	return true
+	return f.persisted, true
 }
 
 func (f *fakeRunner) ReadLog(id, offsetParam string) (runner.LogView, bool) {

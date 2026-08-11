@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -112,6 +113,36 @@ func TestProcessListMatchesTheContract(t *testing.T) {
 	     "started_at": null, "ended_at": null}
 	  ]
 	}`)
+}
+
+func TestProcessGetMatchesTheListElementContract(t *testing.T) {
+	ended := time.Date(2026, 7, 28, 14, 7, 5, 220417000, time.FixedZone("KST", 9*3600))
+	rn := &fakeRunner{entries: []runner.Info{{
+		ID: "proc_45c05b99", Label: "Broken", Cmd: "powershell", Env: nil,
+		Status: runner.StatusFailed, Error: "start failed", EndedAt: timePtr(ended),
+	}}}
+	s := newTestServer(t, Options{Runner: rn})
+
+	status, body, _ := do(t, s, http.MethodGet, "/processes/proc_45c05b99", "")
+	if status != http.StatusOK {
+		t.Fatalf("status %d, want 200", status)
+	}
+	wantBody(t, body, `{"ok":true,"process":{"id":"proc_45c05b99","label":"Broken","cmd":"powershell","cwd":null,"env":{},"pid":null,"status":"failed","exit_code":null,"started_at":null,"ended_at":"2026-07-28T14:07:05.220417+09:00","error":"start failed"}}`)
+	if strings.Contains(body, "persisted") {
+		t.Errorf("a read-only response carried persisted: %s", body)
+	}
+	if len(rn.calls) != 1 || rn.calls[0] != "get" {
+		t.Errorf("runner calls %v, want [get]", rn.calls)
+	}
+}
+
+func TestProcessGetWithoutARunnerIsNotFound(t *testing.T) {
+	s := newTestServer(t, Options{})
+	status, body, _ := do(t, s, http.MethodGet, "/processes/proc_45c05b99", "")
+	if status != http.StatusNotFound {
+		t.Fatalf("status %d, want 404", status)
+	}
+	wantBody(t, body, `{"ok":false,"error":{"code":"not_found","message":"Process not found."}}`)
 }
 
 // An empty registry is an empty array, not null. The screen renders
@@ -364,18 +395,22 @@ func TestLifecycleOperations(t *testing.T) {
 	}
 }
 
-// 0007-P [삭제]: no `process` block. There is no longer a process to describe.
-func TestDeleteAnswersWithTheIdentifierAlone(t *testing.T) {
-	rn := &fakeRunner{entries: []runner.Info{{ID: "proc_f8470a37", Env: map[string]string{}}}}
-	s := newTestServer(t, Options{Runner: rn})
+// 0007-P [삭제]: current deletion and durable deletion are separate results.
+func TestDeleteReportsWhetherTheRemovalWillSurviveARestart(t *testing.T) {
+	for _, persisted := range []bool{true, false} {
+		t.Run(fmt.Sprintf("persisted=%t", persisted), func(t *testing.T) {
+			rn := &fakeRunner{persisted: persisted, entries: []runner.Info{{ID: "proc_f8470a37", Env: map[string]string{}}}}
+			s := newTestServer(t, Options{Runner: rn})
 
-	status, body, _ := do(t, s, http.MethodDelete, "/processes/proc_f8470a37", "")
-	if status != http.StatusOK {
-		t.Fatalf("status %d, want 200", status)
-	}
-	wantBody(t, body, `{"ok": true, "deleted_id": "proc_f8470a37"}`)
-	if !rn.deleted {
-		t.Error("the runner was not asked to delete anything")
+			status, body, _ := do(t, s, http.MethodDelete, "/processes/proc_f8470a37", "")
+			if status != http.StatusOK {
+				t.Fatalf("status %d, want 200", status)
+			}
+			wantBody(t, body, fmt.Sprintf(`{"ok":true,"persisted":%t,"deleted_id":"proc_f8470a37"}`, persisted))
+			if !rn.deleted {
+				t.Error("the runner was not asked to delete anything")
+			}
+		})
 	}
 }
 
@@ -390,6 +425,7 @@ func TestOperationsOnAnUnknownEntry(t *testing.T) {
 		{http.MethodPost, "/processes/proc_00000000/stop", ""},
 		{http.MethodPost, "/processes/proc_00000000/restart", ""},
 		{http.MethodGet, "/processes/proc_00000000/logs", ""},
+		{http.MethodGet, "/processes/proc_00000000", ""},
 		{http.MethodPut, "/processes/proc_00000000", `{"cmd": "powershell"}`},
 		{http.MethodDelete, "/processes/proc_00000000", ""},
 	}
@@ -439,7 +475,6 @@ func TestUnknownPathsAndWrongMethods(t *testing.T) {
 		{http.MethodDelete, "/spawn", http.StatusMethodNotAllowed, notAllowed},
 		{http.MethodPost, "/healthz", http.StatusMethodNotAllowed, notAllowed},
 		{http.MethodPut, "/processes", http.StatusMethodNotAllowed, notAllowed},
-		{http.MethodGet, "/processes/proc_45c05b99", http.StatusMethodNotAllowed, notAllowed},
 		{http.MethodPost, "/", http.StatusMethodNotAllowed, notAllowed},
 	}
 	for _, c := range cases {
@@ -607,10 +642,10 @@ func TestAnEmptyBodyIsAnEmptyObject(t *testing.T) {
 // is the one that matters: left to net/http a HEAD whose body is never written
 // carries none at all, and a caller sizing a response would read zero.
 func TestHeadSendsTheHeadersAndNoBody(t *testing.T) {
-	rn := &fakeRunner{entries: []runner.Info{{ID: "proc_1", Env: map[string]string{}}}}
+	rn := &fakeRunner{entries: []runner.Info{{ID: "proc_45c05b99", Env: map[string]string{}}}}
 	s := newTestServer(t, Options{Runner: rn, Index: []byte("<html>screen</html>")})
 
-	for _, target := range []string{"/", "/index.html", "/healthz", "/processes", "/processes/proc_1/logs"} {
+	for _, target := range []string{"/", "/index.html", "/healthz", "/processes", "/processes/proc_45c05b99", "/processes/proc_45c05b99/logs"} {
 		getStatus, getBody, getHeader := do(t, s, http.MethodGet, target, "")
 		headStatus, headBody, headHeader := do(t, s, http.MethodHead, target, "")
 

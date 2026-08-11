@@ -169,6 +169,40 @@ func TestRotationIsReportedOverARealFile(t *testing.T) {
 
 // A registered entry that has never run has no log file, and that is a 200 with
 // an empty result rather than a 404 (E-8).
+// 0007-P [프로세스 단건 조회] over the real runner: a restored entry answers
+// with the same fields the listing shows, and an id nothing restored answers
+// 404 — proving Get is wired to the same entry map List reads, not a second
+// path that could drift from it.
+func TestProcessGetOverTheRealRunner(t *testing.T) {
+	s, _ := realServer(t, "proc_a", "proc_b")
+
+	status, body, _ := do(t, s, http.MethodGet, "/processes/proc_a", "")
+	if status != http.StatusOK {
+		t.Fatalf("status %d, want 200 — %s", status, body)
+	}
+	var got processResponse
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("decode: %v — %s", err, body)
+	}
+	if !got.OK || got.Process.ID != "proc_a" || got.Process.Status != runner.StatusStopped {
+		t.Errorf("process: %+v", got.Process)
+	}
+	if got.Process.PID != nil || got.Process.ExitCode != nil || got.Process.StartedAt != nil || got.Process.EndedAt != nil {
+		t.Errorf("%s carried live state from before the restart: %+v", got.Process.ID, got.Process)
+	}
+	if strings.Contains(body, `"persisted"`) {
+		t.Errorf("a single-item read must not carry persisted: %s", body)
+	}
+
+	status, body, _ = do(t, s, http.MethodGet, "/processes/proc_missing", "")
+	if status != http.StatusNotFound {
+		t.Fatalf("status %d, want 404 — %s", status, body)
+	}
+	if !strings.Contains(body, "Process not found.") {
+		t.Errorf("body %s, want the not-found message", body)
+	}
+}
+
 func TestAnEntryWithNoLogFileOverTheRealRunner(t *testing.T) {
 	s, _ := realServer(t, "proc_f8470a37")
 

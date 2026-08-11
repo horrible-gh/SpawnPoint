@@ -172,10 +172,10 @@ func (m *Manager) Update(id string, label, cmd *string, cwd **string, env map[st
 // next command to be given that identifier — identifiers are random, but the
 // space is finite — append to a stranger's history (0008-L 2.5.1,
 // 0007-P [삭제]).
-func (m *Manager) Delete(id string) bool {
+func (m *Manager) Delete(id string) (persisted, found bool) {
 	e, ok := m.entry(id)
 	if !ok {
-		return false
+		return false, false
 	}
 	e.opMu.Lock()
 	defer e.opMu.Unlock()
@@ -189,12 +189,14 @@ func (m *Manager) Delete(id string) bool {
 		if err := m.registry.DeleteEntry(id); err != nil {
 			m.log.Log(opslog.Error, "runner entry persist failed",
 				opslog.F("id", id), opslog.F("detail", err))
+		} else {
+			persisted = true
 		}
 	}
 	removed := m.removeLogs(id)
 	m.log.Log(opslog.Info, "entry deleted",
-		opslog.F("id", id), opslog.F("logs_removed", removed))
-	return true
+		opslog.F("id", id), opslog.F("persisted", persisted), opslog.F("logs_removed", removed))
+	return persisted, true
 }
 
 // removeLogs deletes <id>.log and its archives, returning how many went.

@@ -221,7 +221,7 @@ func TestLiveStopDrainsTheWholeTree(t *testing.T) {
 	}
 	m.Stop(info.ID)
 
-	if !m.Delete(info.ID) {
+	if _, found := m.Delete(info.ID); !found {
 		t.Fatal("delete reported the entry as unknown")
 	}
 	if _, err := os.Stat(m.LogPath(info.ID)); err == nil {
