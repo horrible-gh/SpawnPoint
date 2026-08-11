@@ -179,6 +179,13 @@ func TestLiveRequestFrontEnd(t *testing.T) {
 	}
 	id := reg.Process.ID
 
+	// The registration reads back through the single-item route too, over the
+	// real socket rather than the in-process handler.
+	if status, body := inst.request(t, http.MethodGet, "/processes/"+id, ""); status != http.StatusOK ||
+		!strings.Contains(body, `"id":"`+id+`"`) || strings.Contains(body, `"persisted"`) {
+		t.Fatalf("GET /processes/%s: %d %s", id, status, body)
+	}
+
 	// The child's output reaches the log query, which is the collector, the
 	// rotation writer and the reader all in one path.
 	deadline := time.Now().Add(15 * time.Second)
@@ -211,7 +218,7 @@ func TestLiveRequestFrontEnd(t *testing.T) {
 
 	// Delete removes the entry and its log file.
 	if status, body := inst.request(t, http.MethodDelete, "/processes/"+id, ""); status != http.StatusOK ||
-		!strings.Contains(body, `"deleted_id":"`+id+`"`) {
+		!strings.Contains(body, `"persisted":true,"deleted_id":"`+id+`"`) {
 		t.Fatalf("DELETE: %d %s", status, body)
 	}
 	if _, err := os.Stat(filepath.Join(inst.logDir, id+".log")); !os.IsNotExist(err) {
@@ -236,6 +243,7 @@ func TestLiveErrorResponses(t *testing.T) {
 		contains           string
 	}{
 		{http.MethodGet, "/api/v2/processes", "", http.StatusNotFound, "Unknown endpoint."},
+		{http.MethodGet, "/processes/proc_00000000", "", http.StatusNotFound, "Process not found."},
 		{http.MethodPost, "/processes/proc_00000000/stop", "", http.StatusNotFound, "Process not found."},
 		{http.MethodPost, "/processes/proc_00000000/pause", "", http.StatusNotFound, "Unknown endpoint."},
 		{http.MethodPatch, "/processes/proc_00000000", "", http.StatusMethodNotAllowed, "Method not allowed."},
@@ -257,6 +265,58 @@ func TestLiveErrorResponses(t *testing.T) {
 				t.Errorf("body %s, want it to contain %q", body, c.contains)
 			}
 		})
+	}
+}
+
+// process.create carries no request key (help.json's process.create
+// idempotency: class=non_idempotent, automatic_retry=false,
+// retry_rule=do_not_retry_after_ambiguous_result). Retrying an identical
+// POST /processes after a dropped or ambiguous response is therefore not
+// safe: the retry starts a second, independent process instead of returning
+// the first one back, unlike /spawn's request_key dedup exercised above.
+func TestLiveCreateRetryStartsASecondProcessRatherThanDeduplicating(t *testing.T) {
+	requireLive(t)
+	inst := start(t, freePort(t))
+	inst.waitForHealthz(t, 20*time.Second)
+
+	const body = `{"label": "RetryProbe", "cmd": "cmd /c exit 0"}`
+
+	status, first := inst.request(t, http.MethodPost, "/processes", body)
+	if status != http.StatusOK {
+		t.Fatalf("first POST /processes: %d %s", status, first)
+	}
+	status, second := inst.request(t, http.MethodPost, "/processes", body)
+	if status != http.StatusOK {
+		t.Fatalf("retried POST /processes: %d %s", status, second)
+	}
+
+	var firstReg, secondReg struct {
+		OK        bool `json:"ok"`
+		Persisted bool `json:"persisted"`
+		Process   struct {
+			ID string `json:"id"`
+		} `json:"process"`
+	}
+	if err := json.Unmarshal([]byte(first), &firstReg); err != nil {
+		t.Fatalf("decode first: %v — %s", err, first)
+	}
+	if err := json.Unmarshal([]byte(second), &secondReg); err != nil {
+		t.Fatalf("decode retry: %v — %s", err, second)
+	}
+	if !firstReg.OK || !firstReg.Persisted || !secondReg.OK || !secondReg.Persisted {
+		t.Fatalf("ok/persisted: first=%+v second=%+v", firstReg, secondReg)
+	}
+	if firstReg.Process.ID == "" || secondReg.Process.ID == "" {
+		t.Fatalf("missing process id: first=%q second=%q", firstReg.Process.ID, secondReg.Process.ID)
+	}
+	if firstReg.Process.ID == secondReg.Process.ID {
+		t.Fatalf("the retry reused id %q instead of starting a second process — "+
+			"process.create has no request_key, so it must never deduplicate", firstReg.Process.ID)
+	}
+
+	if _, listBody := inst.request(t, http.MethodGet, "/processes", ""); !strings.Contains(listBody, firstReg.Process.ID) ||
+		!strings.Contains(listBody, secondReg.Process.ID) {
+		t.Errorf("both retried registrations must appear in the listing: %s", listBody)
 	}
 }
 

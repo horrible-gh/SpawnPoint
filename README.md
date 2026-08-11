@@ -31,6 +31,7 @@ The server starts on `http://127.0.0.1:7527` by default:
 - Health check: `GET /healthz`
 - Spawn API: `POST /spawn`
 - Process API: `/processes*`
+- API specification: `/help`
 
 Open the UI, enter a command line (optionally a name, working directory and environment variables) and register it — it starts immediately, and Run / Stop / Restart and the log view manage it from there. `Ctrl+C` stops the server.
 
@@ -136,12 +137,14 @@ The dashboard uses the `/processes*` routes to manage real OS subprocesses. Thes
 | --- | --- | --- |
 | `GET` | `/processes` | List registered processes and their current state |
 | `POST` | `/processes` | Register and start a process |
-| `PUT` | `/processes/<id>` | Update a registration and start it |
+| `GET` | `/processes/<id>` | Read one registration and its current state |
+| `PUT` | `/processes/<id>` | Replace the entire registration without changing the current process state; omitted fields reset to defaults, and new values apply on the next run or restart. |
 | `DELETE` | `/processes/<id>` | Delete a registration |
 | `POST` | `/processes/<id>/run` | Run a stopped registration |
 | `POST` | `/processes/<id>/stop` | Stop the process tree |
 | `POST` | `/processes/<id>/restart` | Restart the process with the same ID |
 | `GET` | `/processes/<id>/logs?offset=<bytes>` | Read log output from a byte offset |
+| `GET` | `/help` | Machine-readable specification of every route, schema, error and retry rule |
 
 Start a process with a JSON body such as:
 
@@ -157,6 +160,10 @@ Start a process with a JSON body such as:
 ```
 
 Only `cmd` is required. When `label` is omitted, SpawnPoint uses the first token of the command. Commands run through the OS shell, and combined stdout and stderr are appended to `<SPAWNPOINT_LOG_DIR>/<id>.log`. The UI polls logs once per second.
+
+PUT replaces the full registration. It does not start, stop, or restart the current process. Omitted fields reset to their defaults, and the new command, working directory, and environment take effect on the next run or restart.
+
+A successful DELETE reports both the current effect and its durability. HTTP 200 means the process was stopped and the in-memory registration and logs were removed; `persisted` says whether that deletion survives a restart, and an item deleted with `persisted:false` can be restored as `stopped` after a restart.
 
 Process-tree termination is platform-aware: POSIX uses process-group signals, while Windows uses job objects, so stopping a registration takes down its descendants rather than orphaning them.
 
@@ -191,6 +198,7 @@ internal/dialect/             dialect selector, query loader, error interpreter
 internal/dialect/sql/         embedded queries and migration scripts
 internal/store/               database access and migration runner
 internal/httpapi/             request front end — routes, authentication, responses
+internal/apispec/             embedded machine-readable API contract and startup validation
 internal/webui/               the dashboard, embedded in the executable
 tools/exitprobe/              exit-path measurement harness (not shipped)
 ```
@@ -351,7 +359,7 @@ which a request is judged is part of the contract, not an implementation detail:
 2. is the path defined? — an unknown one is 404 *before* authentication, so an
    unauthenticated caller is not told which paths exist;
 3. is the method allowed on that path? — 405 if not;
-4. authentication, for everything except `/`, `/index.html` and `/healthz`;
+4. authentication, for everything except `/`, `/index.html` and `/healthz`; when authentication is enabled, `/help` also requires a valid token;
 5. is the body JSON, and is it an object?;
 6. the field checks, reporting only the first thing that is wrong.
 

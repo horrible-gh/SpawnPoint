@@ -20,11 +20,12 @@ import (
 // every registry test a database test, and the failure path (E-21) is only
 // reachable on a real store by breaking a file mid-run.
 type fakeRegistry struct {
-	rows    []store.RunnerEntry
-	saved   []store.RunnerEntry
-	deleted []string
-	saveErr error
-	listErr error
+	rows      []store.RunnerEntry
+	saved     []store.RunnerEntry
+	deleted   []string
+	saveErr   error
+	deleteErr error
+	listErr   error
 }
 
 func (f *fakeRegistry) SaveEntry(e store.RunnerEntry) error {
@@ -37,7 +38,7 @@ func (f *fakeRegistry) SaveEntry(e store.RunnerEntry) error {
 
 func (f *fakeRegistry) DeleteEntry(id string) error {
 	f.deleted = append(f.deleted, id)
-	return nil
+	return f.deleteErr
 }
 
 func (f *fakeRegistry) ListEntries() ([]store.RunnerEntry, error) {
@@ -289,8 +290,12 @@ func TestDeleteRemovesEveryLogFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !m.Delete(id) {
+	persisted, found := m.Delete(id)
+	if !found {
 		t.Fatal("delete reported the entry as unknown")
+	}
+	if !persisted {
+		t.Fatal("delete was not reported as persisted")
 	}
 	for _, name := range []string{base, base + ".1", base + ".2"} {
 		if _, err := os.Stat(name); !errors.Is(err, os.ErrNotExist) {
@@ -303,8 +308,47 @@ func TestDeleteRemovesEveryLogFile(t *testing.T) {
 	if registry.deleted[0] != id {
 		t.Errorf("deleted %v from the registry, want %s", registry.deleted, id)
 	}
-	if got := opsLog(t, dir); !strings.Contains(got, "INFO entry deleted id="+id+" logs_removed=3") {
-		t.Errorf("no `entry deleted ... logs_removed=3` record:\n%s", got)
+	if got := opsLog(t, dir); !strings.Contains(got, "INFO entry deleted id="+id+" persisted=true logs_removed=3") {
+		t.Errorf("no `entry deleted ... persisted=true logs_removed=3` record:\n%s", got)
+	}
+}
+
+func TestDeleteReportsPersistenceFailureAfterCompletingCurrentDeletion(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		registry Registry
+	}{
+		{"registry not configured", nil},
+		{"registry delete failed", &fakeRegistry{deleteErr: errors.New("database is locked")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, dir := testManager(t, tc.registry)
+			id := "proc_deadbeef"
+			m.mu.Lock()
+			m.entries[id] = &entry{id: id, label: "x", cmd: "x", status: StatusStopped}
+			m.mu.Unlock()
+			if err := os.WriteFile(m.LogPath(id), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			persisted, found := m.Delete(id)
+			if !found || persisted {
+				t.Errorf("Delete = (%t, %t), want (false, true)", persisted, found)
+			}
+			if _, ok := m.Get(id); ok {
+				t.Error("entry remains in memory after deletion")
+			}
+			if _, err := os.Stat(m.LogPath(id)); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("log remains after deletion: %v", err)
+			}
+			got := opsLog(t, dir)
+			if !strings.Contains(got, "persisted=false") {
+				t.Errorf("completion log did not report persisted=false:\n%s", got)
+			}
+			if tc.registry != nil && !strings.Contains(got, "runner entry persist failed") {
+				t.Errorf("registry error was not logged:\n%s", got)
+			}
+		})
 	}
 }
 
@@ -324,7 +368,7 @@ func TestUnknownIdentifier(t *testing.T) {
 	if _, ok := m.Restart("proc_00000000"); ok {
 		t.Error("Restart found an entry that was never registered")
 	}
-	if m.Delete("proc_00000000") {
+	if _, found := m.Delete("proc_00000000"); found {
 		t.Error("Delete found an entry that was never registered")
 	}
 }

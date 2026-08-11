@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	"spawnpoint/internal/apispec"
 	"spawnpoint/internal/config"
 	"spawnpoint/internal/dialect"
 	"spawnpoint/internal/host"
@@ -76,6 +77,7 @@ func run() int {
 		Runner: procs,
 		Issuer: instances,
 		Index:  webui.Index(),
+		Help:   apispec.Body(),
 	})
 	front := &frontEnd{cfg: cfg, api: api}
 	srv := lifecycle.New(cfg, log, lifecycle.Hooks{
@@ -134,6 +136,9 @@ func (d *database) validateAssets() error {
 	}
 	if !webui.Valid() {
 		return fmt.Errorf("the embedded screen is missing or malformed (%d bytes)", webui.Size())
+	}
+	if err := apispec.Validate(); err != nil {
+		return fmt.Errorf("the embedded API specification is invalid: %w", err)
 	}
 	return nil
 }
