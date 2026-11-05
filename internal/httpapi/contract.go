@@ -20,13 +20,13 @@ type Contract struct {
 	Statuses             []ContractStatus
 	Errors               []ContractError
 	SchemaKeys           map[string][]string
-	RequestBodyMaxBytes  int
+	RequestBodyMaxBytes   int
 	RegistrationMaxRunes map[string]int
 }
 
 type ContractRoute struct {
 	ID, Path, Authentication, ResponseSchema string
-	Methods                                  []string
+	Methods                                 []string
 }
 
 type ContractField struct {
@@ -44,7 +44,7 @@ type ContractStatus struct {
 
 type ContractError struct {
 	Identity, Code, Message, Field string
-	Status                         int
+	Status                        int
 }
 
 func ContractSnapshot() Contract {
@@ -70,11 +70,13 @@ func ContractSnapshot() Contract {
 	labelLong := invalidField("label", "label is too long.")
 	cwdInvalid := invalidField("cwd", "cwd must be a string.")
 	envInvalid := invalidField("env", "env must be an object with string keys and values.")
+	autoStartInvalid := invalidField("auto_start", "auto_start must be a boolean.")
 	errors := []ContractError{
 		contractError("invalid_json", invalidJSON), contractError("invalid_object", invalidObject),
 		contractError("cmd_empty", cmdEmpty), contractError("cmd_too_long", cmdLong),
 		contractError("label_invalid", labelInvalid), contractError("label_too_long", labelLong),
 		contractError("cwd_invalid", cwdInvalid), contractError("env_invalid", envInvalid),
+		contractError("auto_start_invalid", autoStartInvalid),
 		contractError("unauthorized", unauthorisedError()),
 		contractError("process_not_found", notFoundError(msgProcessNotFound)),
 		contractError("unknown_endpoint", notFoundError(msgUnknownEndpoint)),
@@ -99,6 +101,7 @@ func ContractSnapshot() Contract {
 			{Name: "label", Type: "string", Required: false, Nullable: true, Default: "first_word_of_cmd", ValidationOrder: 2},
 			{Name: "cwd", Type: "string", Required: false, Nullable: true, Default: nil, ValidationOrder: 3},
 			{Name: "env", Type: "object<string,string>", Required: false, Nullable: true, Default: "empty_object", ValidationOrder: 4},
+			{Name: "auto_start", Type: "boolean", Required: false, Nullable: false, Default: false, ValidationOrder: 5},
 		},
 		Statuses: []ContractStatus{
 			{Name: runner.StatusStopped, NullFields: []string{}, ConditionalFields: []string{"pid", "exit_code", "started_at", "ended_at"}},
@@ -109,7 +112,7 @@ func ContractSnapshot() Contract {
 		},
 		Errors: errors,
 		SchemaKeys: map[string][]string{
-			"registration":     {"cmd", "label", "cwd", "env"},
+			"registration":     {"cmd", "label", "cwd", "env", "auto_start"},
 			"process":          jsonKeys(processJSON{}),
 			"list_response":    jsonKeys(listResponse{}),
 			"write_response":   jsonKeys(writeResponse{}),
