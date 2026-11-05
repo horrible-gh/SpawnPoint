@@ -1,3 +1,3 @@
-SELECT id, label, cmd, cwd, env, created_at, updated_at
+SELECT id, label, cmd, cwd, env, created_at, updated_at, auto_start
 FROM runner_entry
 ORDER BY created_at, id;

@@ -35,6 +35,7 @@ type RunnerEntry struct {
 	Cmd       string
 	Cwd       *string
 	Env       map[string]string
+	AutoStart bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

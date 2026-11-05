@@ -66,6 +66,7 @@
   tbody tr:hover{background:#12171e}
   tbody tr.sel{background:#132033;box-shadow:inset 3px 0 0 var(--accent)}
   .name{font-family:var(--mono);color:var(--txt)}
+  .auto-start-icon{margin-left:7px;color:var(--accent);font-size:13px}
   .name .sub{display:block;color:var(--faint);font-size:11px;margin-top:2px;
     word-break:break-all}
   .name .sub .warn{color:#e6c07b}
@@ -156,6 +157,11 @@
   .field > label{color:var(--dim);font-size:11.5px;font-weight:600;letter-spacing:.3px}
   .field .hint{color:var(--faint);font-size:11px}
   .field input,.field textarea{width:100%;padding:9px 11px;font-size:13px}
+  .autostart-setting{position:relative;align-self:flex-start}
+  .autostart-setting input{position:absolute;width:1px;height:1px;padding:0;opacity:0}
+  .autostart-setting input:not(:checked) + .sw{background:#3a4250}
+  .autostart-setting input:not(:checked) + .sw::after{right:auto;left:2px;background:#8b98a8}
+  .autostart-setting input:focus-visible + .sw{outline:2px solid var(--accent);outline-offset:3px}
   /* the command grows downward instead of scrolling out of reach sideways */
   .field textarea.cmd{resize:none;overflow:hidden;min-height:40px;line-height:1.5;
     white-space:pre-wrap;word-break:break-word}
@@ -279,6 +285,14 @@
           <input id="fEnv" placeholder="KEY=VAL,KEY2=VAL2 (optional)">
         </div>
       </div>
+      <div class="field">
+        <label class="toggle autostart-setting">
+          <input id="fAutoStart" type="checkbox" role="switch" aria-describedby="autoStartHint">
+          <span class="sw" aria-hidden="true"></span>
+          <span>Auto start</span>
+        </label>
+        <span class="hint" id="autoStartHint">Start this command when SpawnPoint starts. Off by default.</span>
+      </div>
     </div>
     <div class="dlgfoot">
       <span class="dlgnote" id="dlgNote">Clicking the backdrop does not close this</span>
@@ -306,7 +320,7 @@
 <div class="footnote">
   <span><b>API</b> POST /processes · PUT /processes/&lt;id&gt; · /processes/&lt;id&gt;/run · /stop · /restart · GET /processes</span>
   <span><b>Logs</b> polling tail (1s) · GET /processes/&lt;id&gt;/logs (no offset = last 256 KiB) · 1 MiB per response · logs/&lt;id&gt;.log</span>
-  <span><b>Persistence</b> Commands survive a server restart · restored as stopped (press ▶ to resume)</span>
+  <span><b>Persistence</b> Commands survive a server restart · Auto start enabled commands run on startup; others remain stopped</span>
   <span><b>Termination</b> POSIX killpg(SIGTERM→SIGKILL) / Windows taskkill /T /F (children too)</span>
   <span><b>Binding</b> Default 127.0.0.1 · local use only</span>
 </div>
@@ -395,6 +409,7 @@
     fCmd: document.getElementById("fCmd"),
     fCwd: document.getElementById("fCwd"),
     fEnv: document.getElementById("fEnv"),
+    fAutoStart: document.getElementById("fAutoStart"),
     confirmBackdrop: document.getElementById("confirmBackdrop"),
     confirmDlg: document.getElementById("confirmDlg"),
     confirmTitle: document.getElementById("confirmTitle"),
@@ -588,7 +603,9 @@
         if (p.status === "failed" && p.error) sub = '<span class="warn">' + escapeHtml(p.error) + '</span>';
         if (state.unpersisted[p.id]) sub += ' <span class="warn">· not saved — this entry disappears when the server restarts</span>';
         return '<tr class="' + (p.id === state.selectedId ? "sel" : "") + '" data-id="' + p.id + '">' +
-          '<td class="name">' + escapeHtml(p.label) + '<span class="sub">' + sub + '</span></td>' +
+          '<td class="name">' + escapeHtml(p.label) +
+          (p.auto_start ? '<span class="auto-start-icon" role="img" aria-label="Auto start enabled" title="Starts when SpawnPoint starts">⏻</span>' : '') +
+          '<span class="sub">' + sub + '</span></td>' +
           '<td>' + statusChip(p) + '</td>' +
           '<td class="pid col-pid">' + (p.pid != null && running ? p.pid : "—") + '</td>' +
           '<td class="up col-up">' + up + '</td>' +
@@ -763,7 +780,8 @@
      stopped (Save) — POST /processes accepts an optional start flag for this.
      Editing an existing entry can save settings without restarting it (Save) or
      save and restart it immediately (Save & Restart) — the server applies edited
-     settings on the next restart either way. */
+     settings on the next restart either way. Auto start controls future server
+     boots independently of these immediate actions. */
   function openForm(mode, p){
     dlg.mode = mode;
     dlg.editingId = p ? p.id : null;
@@ -773,6 +791,7 @@
     el.fCmd.value = p ? (p.cmd || "") : "";
     el.fCwd.value = p ? (p.cwd || "") : "";
     el.fEnv.value = p ? envText(p.env) : "";
+    el.fAutoStart.checked = !!(p && p.auto_start);
     el.dlgSave.style.display = "";
     el.dlgSaveRun.textContent = mode === "edit" ? "Save & Restart" : "Save & Run";
     setNote("Clicking the backdrop does not close this", false);
@@ -837,6 +856,7 @@
       cmd: cmd,
       cwd: el.fCwd.value.trim() || undefined,
       env: parseEnv(el.fEnv.value),
+      auto_start: el.fAutoStart.checked,
     };
     el.dlgSave.disabled = true;
     el.dlgSaveRun.disabled = true;
@@ -844,7 +864,13 @@
     if (dlg.mode === "edit"){
       request = api("/processes/" + dlg.editingId, { method: "PUT", body: payload })
         .then(function(putData){
-          return alsoRun ? api("/processes/" + dlg.editingId + "/restart", { method: "POST" }) : putData;
+          if (!alsoRun) return putData;
+          return api("/processes/" + dlg.editingId + "/restart", { method: "POST" }).then(function(data){
+            // Restart has no persistence result. Keep the preceding save's
+            // result so a failed auto-start setting write is not shown as saved.
+            data.persisted = putData.persisted;
+            return data;
+          });
         })
         .then(function(data){
           closeForm();
@@ -860,6 +886,7 @@
       if (!alsoRun){
         registerPayload = {
           label: payload.label, cmd: payload.cmd, cwd: payload.cwd, env: payload.env,
+          auto_start: payload.auto_start,
           start: false,
         };
       }
@@ -951,6 +978,10 @@
       dlg.dirty = true;
       setNote("Clicking the backdrop does not close this", false);
     });
+  });
+  el.fAutoStart.addEventListener("change", function(){
+    dlg.dirty = true;
+    setNote("Clicking the backdrop does not close this", false);
   });
 
   el.dlgClose.addEventListener("click", requestClose);

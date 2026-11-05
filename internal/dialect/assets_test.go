@@ -20,6 +20,7 @@ func TestMigrationStatementCounts(t *testing.T) {
 		"001_create_spawn_tables.sql": 5,
 		"002_create_runner_entry.sql": 2,
 		"003_expand_spawn_label.sql":  7,
+		"004_runner_auto_start.sql":   1,
 	}
 
 	adapter := mustAdapter(t)

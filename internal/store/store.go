@@ -290,9 +290,9 @@ func (s *Store) FindActiveByKey(requestKey string, now time.Time, window time.Du
 
 // SaveEntry inserts or updates one registered command.
 //
-// Only the registration is stored, never the live state: a restart brings the
-// entries back as stopped because nothing can prove a process the previous
-// server started is still the one running under that identifier (0006-D 3.1).
+// Only the registration is stored, never the live state: a restart initially
+// restores entries as stopped. Opted-in entries are started separately after
+// the server has successfully bound its listener.
 func (s *Store) SaveEntry(e RunnerEntry) error {
 	query, err := s.adapter.Query("runner_entry", "upsert")
 	if err != nil {
@@ -306,7 +306,7 @@ func (s *Store) SaveEntry(e RunnerEntry) error {
 	// created_at and updated_at are given the same value; the upsert keeps the
 	// original created_at and takes only the new updated_at, so an update does
 	// not disturb the ordering restore relies on (0008-L 6.5).
-	_, err = s.db.Exec(query, e.ID, e.Label, e.Cmd, nullString(e.Cwd), env, ts, ts)
+	_, err = s.db.Exec(query, e.ID, e.Label, e.Cmd, nullString(e.Cwd), env, ts, ts, e.AutoStart)
 	if err != nil {
 		class, note := s.adapter.Interpret(err)
 		return &dialect.WriteError{Class: class, Note: note, Err: err}
@@ -348,7 +348,7 @@ func (s *Store) ListEntries() ([]RunnerEntry, error) {
 			cwd, env             sql.NullString
 			createdAt, updatedAt timestamp
 		)
-		if err := rows.Scan(&e.ID, &e.Label, &e.Cmd, &cwd, &env, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Label, &e.Cmd, &cwd, &env, &createdAt, &updatedAt, &e.AutoStart); err != nil {
 			return nil, fmt.Errorf("list runner entries: %w", err)
 		}
 		e.Cwd = fromNull(cwd)

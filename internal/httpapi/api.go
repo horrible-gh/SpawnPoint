@@ -43,11 +43,11 @@ const RequestBodyMaxBytes = 65536
 type Runner interface {
 	List() []runner.Info
 	Get(id string) (runner.Info, bool)
-	Register(label, cmd string, cwd *string, env map[string]string) (runner.Info, bool)
+	Register(label, cmd string, cwd *string, env map[string]string, autoStart ...bool) (runner.Info, bool)
 	// RegisterOnly saves a registration without starting it, leaving the entry
 	// stopped (spawnpoint.default.0014.0003-NR, 영향 범위 2).
-	RegisterOnly(label, cmd string, cwd *string, env map[string]string) (runner.Info, bool)
-	Update(id string, label, cmd *string, cwd **string, env map[string]string) (info runner.Info, persisted, found bool)
+	RegisterOnly(label, cmd string, cwd *string, env map[string]string, autoStart ...bool) (runner.Info, bool)
+	Update(id string, label, cmd *string, cwd **string, env map[string]string, autoStart ...bool) (info runner.Info, persisted, found bool)
 	Run(id string) (runner.Info, bool)
 	Stop(id string) (runner.Info, bool)
 	Restart(id string) (runner.Info, bool)

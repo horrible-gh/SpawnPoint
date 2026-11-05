@@ -64,7 +64,7 @@ func (f *fakeRunner) find(id string) (runner.Info, bool) {
 	return runner.Info{}, false
 }
 
-func (f *fakeRunner) Register(label, cmd string, cwd *string, env map[string]string) (runner.Info, bool) {
+func (f *fakeRunner) Register(label, cmd string, cwd *string, env map[string]string, autoStart ...bool) (runner.Info, bool) {
 	f.calls = append(f.calls, "register")
 	f.lastName, f.lastCmd, f.lastCwd, f.lastEnv = label, cmd, cwd, env
 	if f.registerAs != nil {
@@ -74,11 +74,14 @@ func (f *fakeRunner) Register(label, cmd string, cwd *string, env map[string]str
 		ID: "proc_2bbd0c5b", Label: label, Cmd: cmd, Cwd: cwd, Env: env,
 		Status: runner.StatusRunning, PID: intPtr(24356), StartedAt: timePtr(sampleStart),
 	}
+	if len(autoStart) > 0 {
+		info.AutoStart = autoStart[0]
+	}
 	f.entries = append(f.entries, info)
 	return info, f.persisted
 }
 
-func (f *fakeRunner) RegisterOnly(label, cmd string, cwd *string, env map[string]string) (runner.Info, bool) {
+func (f *fakeRunner) RegisterOnly(label, cmd string, cwd *string, env map[string]string, autoStart ...bool) (runner.Info, bool) {
 	f.calls = append(f.calls, "register_only")
 	f.lastName, f.lastCmd, f.lastCwd, f.lastEnv = label, cmd, cwd, env
 	if f.registerAs != nil {
@@ -88,11 +91,14 @@ func (f *fakeRunner) RegisterOnly(label, cmd string, cwd *string, env map[string
 		ID: "proc_2bbd0c5b", Label: label, Cmd: cmd, Cwd: cwd, Env: env,
 		Status: runner.StatusStopped,
 	}
+	if len(autoStart) > 0 {
+		info.AutoStart = autoStart[0]
+	}
 	f.entries = append(f.entries, info)
 	return info, f.persisted
 }
 
-func (f *fakeRunner) Update(id string, label, cmd *string, cwd **string, env map[string]string) (runner.Info, bool, bool) {
+func (f *fakeRunner) Update(id string, label, cmd *string, cwd **string, env map[string]string, autoStart ...bool) (runner.Info, bool, bool) {
 	f.calls = append(f.calls, "update")
 	info, ok := f.find(id)
 	if !ok {
@@ -110,6 +116,15 @@ func (f *fakeRunner) Update(id string, label, cmd *string, cwd **string, env map
 	}
 	info.Env = env
 	f.lastEnv = env
+	if len(autoStart) > 0 {
+		info.AutoStart = autoStart[0]
+	}
+	for i := range f.entries {
+		if f.entries[i].ID == id {
+			f.entries[i] = info
+			break
+		}
+	}
 	return info, f.persisted, true
 }
 
