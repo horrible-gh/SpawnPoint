@@ -20,13 +20,13 @@ type Contract struct {
 	Statuses             []ContractStatus
 	Errors               []ContractError
 	SchemaKeys           map[string][]string
-	RequestBodyMaxBytes   int
+	RequestBodyMaxBytes  int
 	RegistrationMaxRunes map[string]int
 }
 
 type ContractRoute struct {
 	ID, Path, Authentication, ResponseSchema string
-	Methods                                 []string
+	Methods                                  []string
 }
 
 type ContractField struct {
@@ -44,7 +44,7 @@ type ContractStatus struct {
 
 type ContractError struct {
 	Identity, Code, Message, Field string
-	Status                        int
+	Status                         int
 }
 
 func ContractSnapshot() Contract {

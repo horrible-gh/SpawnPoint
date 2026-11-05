@@ -1,0 +1,3 @@
+# Keep embedded SQL and Go source identical across Windows/Linux checkouts.
+*.sql text eol=lf
+*.go text eol=lf

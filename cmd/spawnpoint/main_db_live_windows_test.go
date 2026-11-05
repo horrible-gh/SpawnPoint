@@ -48,8 +48,8 @@ func TestLiveMigrationsRunOnceAcrossRestarts(t *testing.T) {
 	first.waitForLog(t, "INFO listening", 20*time.Second)
 	got := first.log()
 	t.Logf("operations log of a first start:\n%s", got)
-	if !strings.Contains(got, "INFO migrations applied=0 pending=3") {
-		t.Errorf("first start did not report three migrations to apply:\n%s", got)
+	if !strings.Contains(got, "INFO migrations applied=0 pending=4") {
+		t.Errorf("first start did not report four migrations to apply:\n%s", got)
 	}
 	// Ordering is fixed by 0008-L 2.15: the database is dealt with before the
 	// listener is bound, so a database failure never leaves a half-started
@@ -88,10 +88,10 @@ func TestLiveMigrationsRunOnceAcrossRestarts(t *testing.T) {
 	second.waitForCount(t, "INFO listening", 2, 20*time.Second)
 
 	got = second.log()
-	if !strings.Contains(got, "INFO migrations applied=3 pending=0") {
+	if !strings.Contains(got, "INFO migrations applied=4 pending=0") {
 		t.Errorf("second start did not find the existing history:\n%s", got)
 	}
-	if n := strings.Count(got, "INFO migrations applied=0 pending=3"); n != 1 {
+	if n := strings.Count(got, "INFO migrations applied=0 pending=4"); n != 1 {
 		t.Errorf("the first start's record appears %d times, want 1 — migrations ran again", n)
 	}
 	sendConsoleCtrl(ctrlBreak, cmd.Process.Pid)
@@ -173,7 +173,7 @@ func assertSchema(t *testing.T, path string) {
 	if err := s.DB().QueryRow("SELECT count(*) FROM migrations").Scan(&history); err != nil {
 		t.Fatalf("read history: %v", err)
 	}
-	if history != 3 {
-		t.Errorf("history has %d rows, want 3", history)
+	if history != 4 {
+		t.Errorf("history has %d rows, want 4", history)
 	}
 }
