@@ -1,0 +1,39 @@
+name: Verify automatic start
+on:
+  push:
+    branches: ['verify/autostart-20261106']
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build
+        run: go build ./...
+      - name: Unit tests
+        run: go test ./...
+      - name: Automatic-start real-child tests
+        env:
+          SPAWNPOINT_LIVE_SPAWN: '1'
+        run: go test ./internal/runner -run AutoStart -count=1 -timeout=2m
+      - name: Embedded UI checks
+        run: node tools/test-autostart-ui.cjs
+      - name: Concurrency checks
+        if: runner.os == 'Linux'
+        run: go test -race ./internal/runner ./internal/httpapi ./internal/store
+      - name: Source formatting report
+        if: always()
+        shell: bash
+        run: git ls-files '*.go' | xargs gofmt -l
