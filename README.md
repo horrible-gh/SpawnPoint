@@ -37,6 +37,17 @@ go build -trimpath -buildvcs=false -o dist/spawnpoint.exe ./cmd/spawnpoint
 ```
 
 
+### Linux x64 build
+
+On Linux, build and run with:
+
+```sh
+sh ./tools/dist.sh
+./dist/linux64/spawnpoint
+```
+
+The shell script builds a static Linux amd64 executable at `dist/linux64/spawnpoint`. It requires Go 1.26+ but not Git tags or a C toolchain.
+
 The server starts on `http://127.0.0.1:7527` by default:
 
 - Runner UI: `GET /`
@@ -219,6 +230,17 @@ The Runner and spawn registration domains share a server and database but remain
 
 ### Windows service registration
 
+For a one-command registration, build first, then open **an elevated PowerShell** window and run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\dist.ps1
+powershell -ExecutionPolicy Bypass -File .\tools\install-service.ps1
+```
+
+This copies the executable to `C:\Program Files\SpawnPoint\spawnpoint.exe` and registers an automatic-start service without starting it immediately. Use `-Start` to start now, or run `sc.exe start SpawnPoint` later. It runs as **LocalService**, not LocalSystem; child commands will run under that restricted account and need permissions to access their project folders. Database and logs live in `C:\ProgramData\SpawnPoint`. The listener defaults to loopback `127.0.0.1:7527`. If the service is already registered, the installer stops without modifying it.
+
+For manual registration or a different service identity:
+
 Registration uses Windows' standard service tools; the executable intentionally
 has no install/uninstall subcommands. It detects whether the service control
 manager started it; otherwise it runs in console mode. Run the following in an
@@ -260,6 +282,26 @@ database and logs are deliberately retained:
 ```powershell
 sc.exe stop SpawnPoint
 sc.exe delete SpawnPoint
+```
+
+### Linux systemd service registration
+
+Build the Linux x64 executable, then register it under a **non-root** account with:
+
+```sh
+sh ./tools/dist.sh
+sudo sh ./tools/install-service.sh --user "$USER"
+sudo systemctl start spawnpoint
+```
+
+The installer places the executable in `/opt/spawnpoint/spawnpoint`, registration in `/etc/systemd/system/spawnpoint.service`, SQLite in `/var/lib/spawnpoint`, and logs in `/var/log/spawnpoint`. It enables the service on boot, but **does not start it immediately** unless `--start` is passed. If invoked with `sudo`, the current non-root user is selected automatically; use `--user` to choose a dedicated account. The service uses loopback `127.0.0.1:7527` by default and can only access files permitted to its service user.
+
+Registration refuses to overwrite an existing unit. To inspect it use `systemctl status spawnpoint` and `journalctl -u spawnpoint`. To remove only the service registration (without deleting data or logs):
+
+```sh
+sudo systemctl disable --now spawnpoint
+sudo rm /etc/systemd/system/spawnpoint.service
+sudo systemctl daemon-reload
 ```
 
 ### Shell command-line assembly
