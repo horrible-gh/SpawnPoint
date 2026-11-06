@@ -36,6 +36,7 @@ go build -trimpath -buildvcs=false -o dist/spawnpoint.exe ./cmd/spawnpoint
 .\dist\spawnpoint.exe
 ```
 
+
 ### Linux x64 build
 
 On Linux, build and run with:
@@ -226,8 +227,6 @@ tools/exitprobe/              exit-path measurement harness (not shipped)
 ```
 
 The Runner and spawn registration domains share a server and database but remain separate in their service logic.
-
-### Windows service registration
 
 ### Windows service registration
 

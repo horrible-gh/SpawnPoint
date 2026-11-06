@@ -26,6 +26,9 @@ type processJSON struct {
 	Cmd   string            `json:"cmd"`
 	Cwd   *string           `json:"cwd"`
 	Env   map[string]string `json:"env"`
+	// Omitted when false to preserve existing response bodies. An absent
+	// auto_start always means false; enabled registrations explicitly send true.
+	AutoStart bool `json:"auto_start,omitempty"`
 	// PID is the shell's process, not the program the user named: the program
 	// is that shell's descendant (0004-NR 3.3). Kept as-is from the current
 	// contract.
@@ -80,6 +83,7 @@ func toJSON(info runner.Info) processJSON {
 		Cmd:       info.Cmd,
 		Cwd:       info.Cwd,
 		Env:       env,
+		AutoStart: info.AutoStart,
 		PID:       info.PID,
 		Status:    info.Status,
 		ExitCode:  info.ExitCode,
@@ -115,11 +119,12 @@ type registration struct {
 	cmd   string
 	cwd   *string
 	env   map[string]string
+	// nil means omitted: creation defaults to off, updates preserve the value.
+	autoStart []bool
 }
 
-// validateRegistration is 0008-L 4.1's field order: cmd, label, cwd, env. It
-// returns at the first failure and never accumulates — a caller fixing one
-// field at a time is the contract, not a limitation.
+// validateRegistration preserves the existing cmd, label, cwd, env validation
+// order, then validates the optional auto_start flag.
 func validateRegistration(obj map[string]json.RawMessage) (registration, *apiError) {
 	var out registration
 
@@ -173,6 +178,13 @@ func validateRegistration(obj map[string]json.RawMessage) (registration, *apiErr
 		}
 		out.env = env
 	}
+	if raw, exists := obj["auto_start"]; exists {
+		value, ok := asBool(raw)
+		if !ok || isNull(raw) {
+			return out, ptr(invalidField("auto_start", "auto_start must be a boolean."))
+		}
+		out.autoStart = []bool{value}
+	}
 	return out, nil
 }
 
@@ -222,9 +234,9 @@ func (s *Server) serveRegister(w http.ResponseWriter, r *http.Request) {
 		persisted bool
 	)
 	if start {
-		info, persisted = s.runner.Register(reg.label, reg.cmd, reg.cwd, reg.env)
+		info, persisted = s.runner.Register(reg.label, reg.cmd, reg.cwd, reg.env, reg.autoStart...)
 	} else {
-		info, persisted = s.runner.RegisterOnly(reg.label, reg.cmd, reg.cwd, reg.env)
+		info, persisted = s.runner.RegisterOnly(reg.label, reg.cmd, reg.cwd, reg.env, reg.autoStart...)
 	}
 	s.writeJSON(w, r, http.StatusOK, writeResponse{OK: true, Persisted: persisted, Process: toJSON(info)})
 }
@@ -267,11 +279,10 @@ func (s *Server) serveUpdate(w http.ResponseWriter, r *http.Request, id string) 
 		s.fail(w, r, notFoundError(msgProcessNotFound))
 		return
 	}
-	// PUT replaces, so every field is sent, including the ones the body left
-	// out — those were resolved to their defaults by validation. A caller that
-	// omits `env` is asking for no extra environment, not for the old one.
+	// PUT replaces the existing command fields. auto_start is an additive
+	// option: omission preserves it for clients written before it existed.
 	cwd := reg.cwd
-	info, persisted, ok := s.runner.Update(id, &reg.label, &reg.cmd, &cwd, reg.env)
+	info, persisted, ok := s.runner.Update(id, &reg.label, &reg.cmd, &cwd, reg.env, reg.autoStart...)
 	if !ok {
 		s.fail(w, r, notFoundError(msgProcessNotFound))
 		return

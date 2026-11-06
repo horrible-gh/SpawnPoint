@@ -30,27 +30,30 @@ type schemaDump struct {
 
 // TestMigrateProducesThePythonSchema is item 4 of 0008-L 6.3.
 //
-// The reference is not a description of the schema, it is the schema the
-// previous implementation actually produced, captured by running it against a
-// deployed database. Comparing against it means the check covers things nobody
-// thought to assert: the exact text of every constraint, the
-// partial index predicate, the column defaults, and the definition of the
-// history table itself.
+// The historical migration prefix must still reproduce the fixed reference
+// byte for byte. Later feature migrations are tested separately rather than
+// rewriting the reference to conceal a change in the compatibility baseline.
 func TestMigrateProducesThePythonSchema(t *testing.T) {
 	want := loadReference(t)
-
 	s := openTemp(t)
-	already, applied, err := s.Migrate()
+	if _, err := s.DB().Exec(migrationsDDL); err != nil {
+		t.Fatal(err)
+	}
+	scripts, err := s.adapter.Migrations()
 	if err != nil {
-		t.Fatalf("Migrate: %v", err)
+		t.Fatal(err)
 	}
-	if already != 0 {
-		t.Errorf("already applied = %d on an empty database, want 0", already)
+	if len(scripts) < len(want.Migrations) {
+		t.Fatal("historical migrations are missing")
 	}
-	if applied != len(want.Migrations) {
-		t.Errorf("applied = %d, want %d", applied, len(want.Migrations))
+	for i, name := range want.Migrations {
+		if scripts[i].Name != name {
+			t.Fatalf("historical migration %d = %q, want %q", i, scripts[i].Name, name)
+		}
+		if err := s.applyOne(scripts[i]); err != nil {
+			t.Fatal(err)
+		}
 	}
-
 	got := dumpSchema(t, s.DB())
 	if !reflect.DeepEqual(got.Objects, want.Objects) {
 		reportSchemaDifference(t, got.Objects, want.Objects)
@@ -72,7 +75,11 @@ func TestMigrateDoesNotReapply(t *testing.T) {
 	path := filepath.Join(dir, "existing.db")
 
 	first := openAt(t, path)
-	if _, applied, err := first.Migrate(); err != nil || applied != 3 {
+	scripts, err := first.adapter.Migrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, applied, err := first.Migrate(); err != nil || applied != len(scripts) {
 		t.Fatalf("first Migrate: applied=%d err=%v", applied, err)
 	}
 	before := historyRows(t, first.DB())
@@ -86,8 +93,8 @@ func TestMigrateDoesNotReapply(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Migrate: %v", err)
 	}
-	if already != 3 {
-		t.Errorf("already applied = %d, want 3", already)
+	if already != len(scripts) {
+		t.Errorf("already applied = %d, want %d", already, len(scripts))
 	}
 	if applied != 0 {
 		t.Errorf("applied = %d on a database that was already migrated, want 0", applied)
@@ -150,8 +157,8 @@ func TestExpandSpawnLabelMigrationPreservesRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(scripts) != 3 {
-		t.Fatalf("migration count = %d, want 3", len(scripts))
+	if len(scripts) < 3 {
+		t.Fatalf("migration count = %d, want at least 3", len(scripts))
 	}
 	for _, script := range scripts[:2] {
 		if err := s.applyOne(script); err != nil {
@@ -181,11 +188,9 @@ func TestExpandSpawnLabelMigrationPreservesRows(t *testing.T) {
 // TestFailedMigrationLeavesNothingBehind is 0004-NR R6, the window the rewrite
 // closes.
 //
-// The current implementation commits the statements and then records the
-// history separately, so a failure between the two leaves a database whose
-// schema has changed and whose history does not say so. Here the statements and
-// the history entry share one transaction: a script that fails half way through
-// must leave the database exactly as it was.
+// The current implementation commits the statements first and then records the
+// history row separately, so a failure between the two leaves the database with
+// a changed schema but no corresponding history row.
 func TestFailedMigrationLeavesNothingBehind(t *testing.T) {
 	s := openTemp(t)
 	if _, _, err := s.Migrate(); err != nil {

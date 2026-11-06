@@ -1,0 +1,71 @@
+name: Verify automatic start
+on:
+  push:
+    branches: ['main', 'verify/autostart-20261106']
+  pull_request:
+    branches: ['main']
+permissions:
+  contents: read
+env:
+  # Existing measured protocol fixtures use Japan local time.
+  TZ: Asia/Tokyo
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Set Windows test timezone
+        if: runner.os == 'Windows'
+        run: tzutil /s "Tokyo Standard Time"
+      - name: Build
+        run: go build ./...
+      - name: Verify one-command Windows packaging
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File .\tools\dist.ps1
+          if ($LASTEXITCODE -ne 0) { throw "dist.ps1 failed" }
+          $exe = ".\dist\win64\spawnpoint.exe"
+          if (-not (Test-Path -LiteralPath $exe)) { throw "Missing $exe" }
+          if ((Get-Item -LiteralPath $exe).Length -lt 100000) { throw "Packaged executable is unexpectedly small" }
+      - name: Verify Linux distribution and systemd script syntax
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sh -n tools/dist.sh tools/install-service.sh
+          sh tools/dist.sh
+          test -x dist/linux64/spawnpoint
+      - name: Verify Windows service installer syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path .\tools\install-service.ps1), [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) { throw "install-service.ps1 has syntax errors: $errors" }
+      - name: Unit tests
+        run: go test ./...
+      - name: Automatic-start real-child tests
+        env:
+          SPAWNPOINT_LIVE_SPAWN: '1'
+        run: go test ./internal/runner -run AutoStart -count=1 -timeout=2m
+      - name: Embedded UI checks
+        run: node tools/test-autostart-ui.cjs
+      - name: Concurrency checks
+        if: runner.os == 'Linux'
+        run: go test -race ./internal/runner ./internal/httpapi ./internal/store
+      - name: Source formatting report
+        if: always()
+        shell: bash
+        run: git ls-files '*.go' | xargs gofmt -l

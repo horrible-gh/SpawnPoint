@@ -87,12 +87,17 @@ func run() int {
 		RestoreEntries:  procs.Restore,
 		CloseDatabase:   db.close,
 		Bind:            front.bind,
-		Serve:           front.serve,
-		StopAccepting:   front.stopAccepting,
-		WaitInflight:    front.waitInflight,
-		StopChildren:    procs.StopChildren,
-		StopCollectors:  procs.StopCollectors,
-		CloseServerJob:  procs.CloseServerJob,
+		Serve: func(stop <-chan struct{}) error {
+			// Serve is reached only after a successful bind. Do not launch
+			// children when startup failed (for example, an occupied port).
+			procs.AutoStart(stop)
+			return front.serve(stop)
+		},
+		StopAccepting:  front.stopAccepting,
+		WaitInflight:   front.waitInflight,
+		StopChildren:   procs.StopChildren,
+		StopCollectors: procs.StopCollectors,
+		CloseServerJob: procs.CloseServerJob,
 	})
 
 	mode, code := host.Run(srv)

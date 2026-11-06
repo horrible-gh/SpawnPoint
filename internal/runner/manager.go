@@ -62,6 +62,10 @@ type Manager struct {
 	mu      sync.Mutex
 	entries map[string]*entry
 
+	// Auto-start and shutdown must not overlap their child snapshots.
+	autoStartMu   sync.Mutex
+	autoStartOnce sync.Once
+
 	// serverJob is created just before the first child, not at startup: a
 	// server that never runs anything should not hold a job object, and the
 	// current implementation defers it the same way (0008-L 2.3).
@@ -103,8 +107,9 @@ func (m *Manager) LogPath(id string) string {
 // start — the user asked for the process, and refusing to run it because a row
 // could not be written would trade a recoverable loss for an immediate one. The
 // caller is told, through persisted, so the response can say so (E-21).
-func (m *Manager) Register(label, cmd string, cwd *string, env map[string]string) (Info, bool) {
-	return m.register(label, cmd, cwd, env, true)
+// The optional autoStart flag defaults to false and only affects future boots.
+func (m *Manager) Register(label, cmd string, cwd *string, env map[string]string, autoStart ...bool) (Info, bool) {
+	return m.register(label, cmd, cwd, env, true, autoStart...)
 }
 
 // RegisterOnly adds a command without starting it.
@@ -115,13 +120,13 @@ func (m *Manager) Register(label, cmd string, cwd *string, env map[string]string
 // already what an entry has between being written and being started — a later
 // Run starts it the same way it would start any other stopped entry, restored
 // or otherwise (spawnpoint.default.0014.0003-NR, 영향 범위 2).
-func (m *Manager) RegisterOnly(label, cmd string, cwd *string, env map[string]string) (Info, bool) {
-	return m.register(label, cmd, cwd, env, false)
+func (m *Manager) RegisterOnly(label, cmd string, cwd *string, env map[string]string, autoStart ...bool) (Info, bool) {
+	return m.register(label, cmd, cwd, env, false, autoStart...)
 }
 
 // register is shared by Register and RegisterOnly; start decides whether the
 // freshly saved entry is spawned.
-func (m *Manager) register(label, cmd string, cwd *string, env map[string]string, start bool) (Info, bool) {
+func (m *Manager) register(label, cmd string, cwd *string, env map[string]string, start bool, autoStart ...bool) (Info, bool) {
 	now := time.Now()
 	e := &entry{
 		id:        m.newID(),
@@ -132,6 +137,9 @@ func (m *Manager) register(label, cmd string, cwd *string, env map[string]string
 		createdAt: now,
 		updatedAt: now,
 		status:    StatusStopped,
+	}
+	if len(autoStart) > 0 {
+		e.autoStart = autoStart[0]
 	}
 
 	m.mu.Lock()
@@ -161,7 +169,8 @@ func (m *Manager) register(label, cmd string, cwd *string, env map[string]string
 // in memory but not written disappears on the next restart, and the current
 // server's silence about that is what produced entries the user could see but
 // the database had never heard of (E-21, 0004-NR F7).
-func (m *Manager) Update(id string, label, cmd *string, cwd **string, env map[string]string) (Info, bool, bool) {
+// Omitting autoStart preserves it, so older callers cannot accidentally disable it.
+func (m *Manager) Update(id string, label, cmd *string, cwd **string, env map[string]string, autoStart ...bool) (Info, bool, bool) {
 	e, ok := m.entry(id)
 	if !ok {
 		return Info{}, false, false
@@ -178,6 +187,9 @@ func (m *Manager) Update(id string, label, cmd *string, cwd **string, env map[st
 	}
 	if env != nil {
 		e.env = copyEnv(env)
+	}
+	if len(autoStart) > 0 {
+		e.autoStart = autoStart[0]
 	}
 	e.updatedAt = time.Now()
 	info := e.infoLocked()
@@ -240,8 +252,8 @@ func (m *Manager) removeLogs(id string) int {
 //
 // Only the registration comes back. The pid recorded before a restart cannot be
 // shown to still belong to the command it was recorded against — the operating
-// system reuses numbers — so every live field is left null and the user resumes
-// the entry with run (0006-D 3.1, 0008-L 2.15, 6.5).
+// system reuses numbers — so every live field is left null. AutoStart runs
+// opted-in entries separately, only after successful server initialization.
 func (m *Manager) Restore() (int, error) {
 	if m.registry == nil {
 		return 0, nil
@@ -259,6 +271,7 @@ func (m *Manager) Restore() (int, error) {
 			cmd:       row.Cmd,
 			cwd:       normaliseCwd(row.Cwd),
 			env:       copyEnv(row.Env),
+			autoStart: row.AutoStart,
 			createdAt: row.CreatedAt,
 			updatedAt: row.UpdatedAt,
 		}
@@ -277,6 +290,7 @@ func (m *Manager) persist(e *entry) bool {
 	e.mu.Lock()
 	row := store.RunnerEntry{
 		ID: e.id, Label: e.label, Cmd: e.cmd, Cwd: e.cwd, Env: copyEnv(e.env),
+		AutoStart: e.autoStart,
 		CreatedAt: e.createdAt, UpdatedAt: e.updatedAt,
 	}
 	e.mu.Unlock()
@@ -389,6 +403,8 @@ func (m *Manager) List() []Info {
 // behind it would be left to the kernel; in parallel a single refusal costs
 // only itself.
 func (m *Manager) StopChildren(reason string, deadline time.Time) {
+	m.autoStartMu.Lock()
+	defer m.autoStartMu.Unlock()
 	m.mu.Lock()
 	all := make([]*entry, 0, len(m.entries))
 	for _, e := range m.entries {
@@ -420,6 +436,9 @@ func (m *Manager) StopChildren(reason string, deadline time.Time) {
 // for them rather than cutting them off, because what a child wrote on its way
 // down is the part worth having (0008-L 2.3, 2.4.1).
 func (m *Manager) StopCollectors() {
+	// Also wait when KillChildrenOnExit is false and StopChildren was skipped.
+	m.autoStartMu.Lock()
+	defer m.autoStartMu.Unlock()
 	// The entry list is copied out before any entry lock is taken. Every other
 	// path locks an entry first and the manager second, and holding both in the
 	// other order here would be the one place the two can meet head on.

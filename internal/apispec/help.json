@@ -47,6 +47,7 @@
     {"id": "label_too_long", "code": "invalid_request", "http_status": 400, "message": "label is too long.", "field": "label", "field_condition": "label exceeds 128 Unicode code points"},
     {"id": "cwd_invalid", "code": "invalid_request", "http_status": 400, "message": "cwd must be a string.", "field": "cwd", "field_condition": "specified cwd is not a string"},
     {"id": "env_invalid", "code": "invalid_request", "http_status": 400, "message": "env must be an object with string keys and values.", "field": "env", "field_condition": "env is not an object of string values"},
+    {"id": "auto_start_invalid", "code": "invalid_request", "http_status": 400, "message": "auto_start must be a boolean.", "field": "auto_start", "field_condition": "specified auto_start is null or not a boolean"},
     {"id": "unauthorized", "code": "unauthorized", "http_status": 401, "message": "Valid authentication token required.", "field": null, "field_condition": "no field key"},
     {"id": "process_not_found", "code": "not_found", "http_status": 404, "message": "Process not found.", "field": null, "field_condition": "no field key"},
     {"id": "unknown_endpoint", "code": "not_found", "http_status": 404, "message": "Unknown endpoint.", "field": null, "field_condition": "no field key"},
@@ -56,16 +57,17 @@
   ],
   "schemas": {
     "registration": {
-      "keys": ["cmd", "label", "cwd", "env"],
+      "keys": ["cmd", "label", "cwd", "env", "auto_start"],
       "fields": [
         {"name": "cmd", "type": "string", "required": true, "nullable": false, "default": null, "validation_order": 1, "max_runes": 4096},
         {"name": "label", "type": "string", "required": false, "nullable": true, "default": "first_word_of_cmd", "validation_order": 2, "max_runes": 128},
         {"name": "cwd", "type": "string", "required": false, "nullable": true, "default": null, "validation_order": 3, "max_runes": null},
-        {"name": "env", "type": "object<string,string>", "required": false, "nullable": true, "default": "empty_object", "validation_order": 4, "max_runes": null}
+        {"name": "env", "type": "object<string,string>", "required": false, "nullable": true, "default": "empty_object", "validation_order": 4, "max_runes": null},
+        {"name": "auto_start", "type": "boolean", "required": false, "nullable": false, "default": false, "validation_order": 5, "max_runes": null, "update_omission": "preserve_existing_value", "description": "Start once when SpawnPoint starts. Saving this preference does not start or restart the process immediately."}
       ],
       "unknown_top_level_fields": "ignored"
     },
-    "process": {"keys": ["id", "label", "cmd", "cwd", "env", "pid", "status", "exit_code", "started_at", "ended_at", "error"], "conditional_keys": {"error": "status == failed"}},
+    "process": {"keys": ["id", "label", "cmd", "cwd", "env", "pid", "status", "exit_code", "started_at", "ended_at", "error", "auto_start"], "conditional_keys": {"error": "status == failed", "auto_start": "included only when true; absence means false"}},
     "list_response": {"keys": ["ok", "processes"]},
     "write_response": {"keys": ["ok", "persisted", "process"]},
     "process_response": {"keys": ["ok", "process"]},
@@ -87,7 +89,7 @@
       "id": "process.create", "methods": ["POST"], "path": "/processes", "authentication": "conditional_bearer",
       "request": {"headers": ["Authorization", "Content-Type"], "path_parameters": [], "query_parameters": [], "body_schema": "registration", "body_required": true},
       "success": {"http_status": 200, "response_schema": "write_response", "judgement_rule_ids": ["require_2xx_and_ok", "require_persisted_for_durability", "failed_status_means_start_failure_even_on_200", "require_running_when_running_is_the_goal"]},
-      "errors": [{"catalog_id": "invalid_json"}, {"catalog_id": "invalid_object"}, {"catalog_id": "cmd_empty"}, {"catalog_id": "cmd_too_long"}, {"catalog_id": "label_invalid"}, {"catalog_id": "label_too_long"}, {"catalog_id": "cwd_invalid"}, {"catalog_id": "env_invalid"}, {"catalog_id": "unauthorized"}, {"catalog_id": "method_not_allowed"}, {"catalog_id": "payload_too_large"}],
+      "errors": [{"catalog_id": "invalid_json"}, {"catalog_id": "invalid_object"}, {"catalog_id": "cmd_empty"}, {"catalog_id": "cmd_too_long"}, {"catalog_id": "label_invalid"}, {"catalog_id": "label_too_long"}, {"catalog_id": "cwd_invalid"}, {"catalog_id": "env_invalid"}, {"catalog_id": "auto_start_invalid"}, {"catalog_id": "unauthorized"}, {"catalog_id": "method_not_allowed"}, {"catalog_id": "payload_too_large"}],
       "side_effects": {"process": "register_and_start", "log": "create_and_append", "database": "save_registration"},
       "idempotency": {"class": "non_idempotent", "request_key": null, "automatic_retry": false, "retry_rule": "do_not_retry_after_ambiguous_result"}
     },
@@ -103,7 +105,7 @@
       "id": "process.replace", "methods": ["PUT"], "path": "/processes/{id}", "authentication": "conditional_bearer",
       "request": {"headers": ["Authorization", "Content-Type"], "path_parameters": ["id"], "query_parameters": [], "body_schema": "registration", "body_required": true},
       "success": {"http_status": 200, "response_schema": "write_response", "judgement_rule_ids": ["require_2xx_and_ok", "require_persisted_for_durability"]},
-      "errors": [{"catalog_id": "invalid_json"}, {"catalog_id": "invalid_object"}, {"catalog_id": "cmd_empty"}, {"catalog_id": "cmd_too_long"}, {"catalog_id": "label_invalid"}, {"catalog_id": "label_too_long"}, {"catalog_id": "cwd_invalid"}, {"catalog_id": "env_invalid"}, {"catalog_id": "unauthorized"}, {"catalog_id": "process_not_found"}, {"catalog_id": "method_not_allowed"}, {"catalog_id": "payload_too_large"}],
+      "errors": [{"catalog_id": "invalid_json"}, {"catalog_id": "invalid_object"}, {"catalog_id": "cmd_empty"}, {"catalog_id": "cmd_too_long"}, {"catalog_id": "label_invalid"}, {"catalog_id": "label_too_long"}, {"catalog_id": "cwd_invalid"}, {"catalog_id": "env_invalid"}, {"catalog_id": "auto_start_invalid"}, {"catalog_id": "unauthorized"}, {"catalog_id": "process_not_found"}, {"catalog_id": "method_not_allowed"}, {"catalog_id": "payload_too_large"}],
       "side_effects": {"process": "registration_only_no_state_change", "log": "none", "database": "upsert_registration"},
       "idempotency": {"class": "idempotent_registration_state", "request_key": null, "automatic_retry": true, "retry_rule": "retry_same_complete_body"}
     },

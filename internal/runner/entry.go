@@ -28,11 +28,12 @@ const (
 // Info is one entry as the rest of the server sees it: a snapshot, safe to hold
 // and to render, with no handles in it.
 type Info struct {
-	ID    string
-	Label string
-	Cmd   string
-	Cwd   *string
-	Env   map[string]string
+	ID        string
+	Label     string
+	Cmd       string
+	Cwd       *string
+	Env       map[string]string
+	AutoStart bool
 
 	Status   string
 	PID      *int
@@ -73,6 +74,7 @@ type entry struct {
 	cmd       string
 	cwd       *string
 	env       map[string]string
+	autoStart bool
 	createdAt time.Time
 	updatedAt time.Time
 
@@ -120,6 +122,7 @@ func (e *entry) infoLocked() Info {
 		ID:        e.id,
 		Label:     e.label,
 		Cmd:       e.cmd,
+		AutoStart: e.autoStart,
 		Status:    e.status,
 		Error:     e.errText,
 		CreatedAt: e.createdAt,
