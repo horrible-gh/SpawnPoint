@@ -19,9 +19,20 @@ SpawnPoint is a lightweight service for creating uniquely identified task instan
 
 SpawnPoint requires Go 1.26 or later to build. It has no runtime dependency beyond the produced executable.
 
+On Windows, build the x64 executable with one command from the repository root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\dist.ps1
+.\dist\win64\spawnpoint.exe
+```
+
+The build script also accepts `-OutDir` to change the output directory. It does not require Git tags and restores any `GOOS`, `GOARCH`, and `CGO_ENABLED` environment variables after the build.
+
+For a direct/manual build instead:
+
 ```powershell
 $env:CGO_ENABLED = '0'
-go build -trimpath -o dist/spawnpoint.exe ./cmd/spawnpoint
+go build -trimpath -buildvcs=false -o dist/spawnpoint.exe ./cmd/spawnpoint
 .\dist\spawnpoint.exe
 ```
 
