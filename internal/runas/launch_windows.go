@@ -137,12 +137,21 @@ func childInput() (*os.File, error) {
 	return os.Stdin, nil
 }
 func executeChild(r Request) int {
+	// This is a dedicated target-account process, not the SpawnPoint server.
+	// Keep its desktop setup and CreateProcess on the same OS thread.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	desktopHandles, err := prepareChildDesktop(r.Nonce)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "execution desktop initialization failed:", err)
+		return 125
+	}
 	systemRoot := os.Getenv("SystemRoot")
 	if systemRoot == "" {
 		systemRoot = `C:\Windows`
 	}
 	shell := systemRoot + `\System32\cmd.exe`
-	cmd := &exec.Cmd{Path: shell, SysProcAttr: &syscall.SysProcAttr{CmdLine: syscall.EscapeArg(shell) + ` /d /s /c "chcp 65001>nul & ` + r.Command + `"`, HideWindow: true}}
+	cmd := &exec.Cmd{Path: shell, SysProcAttr: &syscall.SysProcAttr{CmdLine: syscall.EscapeArg(shell) + ` /d /s /c "chcp 65001>nul & ` + r.Command + `"`, HideWindow: true, AdditionalInheritedHandles: desktopHandles}}
 	if r.Cwd != "" {
 		cmd.Dir = r.Cwd
 	} else {
@@ -178,8 +187,6 @@ func executeChild(r Request) int {
 	// actual shell and its descendants inherit that job at creation.
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	// Ready is written before creating the command. Command-start failure is
-	// reported as nonzero exit with a short error, never a fallback identity.
 	// Check the directory as the target account before declaring readiness.
 	if cmd.Dir != "" {
 		st, e := os.Stat(cmd.Dir)
