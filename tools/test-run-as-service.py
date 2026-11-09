@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CI-only: exercise the shipped installer and execution under its service identity.
+"""CI-only: test the shipped installer and execution under its service identity.
 Never run against an existing installation. GitHub-hosted disposable runners only.
 """
 import ctypes
@@ -14,7 +14,7 @@ import time
 import urllib.request
 
 if os.environ.get('GITHUB_ACTIONS') != 'true':
-    raise SystemExit('This destructive service lifecycle test is restricted to disposable CI runners.')
+    raise SystemExit('Service lifecycle test is restricted to disposable CI runners.')
 WIN = os.name == 'nt'
 USER = os.environ['SPAWNPOINT_RUNAS_TEST_USER']
 PASSWORD = os.environ['SPAWNPOINT_RUNAS_TEST_PASSWORD']
@@ -60,7 +60,6 @@ def control(action):
 
 def process_watch(pid):
     if not WIN:
-        # Preserve identity across potential PID reuse; readability means exit.
         import select
         descriptor = os.pidfd_open(pid)
         return lambda: bool(select.select([descriptor], [], [], 0)[0]), lambda: os.close(descriptor)
@@ -90,6 +89,7 @@ else:
 
 installed = False
 handles = []
+id = None
 try:
     if WIN:
         run('powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
@@ -124,7 +124,6 @@ try:
     handles.append(close)
     assert api('/processes/' + id + '/stop', {}, 'POST')['process']['status'] == 'stopped'
     until(gone)
-    # The same encrypted credential must work after a real SCM/systemd restart.
     control('stop')
     control('start')
     until(lambda: api('/processes/' + id)['process']['status'] == 'running')
@@ -137,6 +136,19 @@ try:
     until(gone)
     assert PASSWORD.encode() not in (data_dir / 'spawnpoint.db').read_bytes()
     print('PASS: shipped service installer, real service identity, authenticated target user, descendant termination, encrypted restart/auto-start and service shutdown')
+except Exception:
+    # Preserve evidence before cleanup; never print the submitted credentials.
+    if installed:
+        try:
+            print('SERVICE SNAPSHOT:', json.dumps(api('/processes')).replace(PASSWORD, '<redacted>'), flush=True)
+            if id:
+                print('COMMAND OUTPUT:', json.dumps(api('/processes/' + id + '/logs')).replace(PASSWORD, '<redacted>'), flush=True)
+            logs = data_dir / 'logs' if WIN else Path('/var/log/spawnpoint')
+            for f in logs.glob('spawnpoint.log*'):
+                print('OPERATIONS LOG:', f.read_text(errors='replace')[-12000:].replace(PASSWORD, '<redacted>'), flush=True)
+        except Exception as diagnostic_error:
+            print('Diagnostic unavailable:', str(diagnostic_error).replace(PASSWORD, '<redacted>'), flush=True)
+    raise
 finally:
     for close in handles:
         close()
