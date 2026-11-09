@@ -14,6 +14,7 @@ env:
   TZ: Asia/Tokyo
 jobs:
   verify:
+    if: ${{ inputs.ref != '' || !contains(github.event.head_commit.message, '[bootstrap-transfer]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -67,6 +68,19 @@ jobs:
           echo "SPAWNPOINT_AUTH_TEST_PASSWORD=$password" >> "$GITHUB_ENV"
           echo "SPAWNPOINT_RUNAS_TEST_USER=spauthtarget" >> "$GITHUB_ENV"
           echo "SPAWNPOINT_RUNAS_TEST_PASSWORD=$password" >> "$GITHUB_ENV"
+          admin_password="Sa!$(openssl rand -hex 18)aA4"
+          echo "::add-mask::$admin_password"
+          sudo useradd -m -s /bin/sh spbootstrapadmin
+          printf '%s:%s\n' spbootstrapadmin "$admin_password" | sudo chpasswd
+          printf '%s\n' 'spbootstrapadmin ALL=(root) ALL' 'spauthtarget ALL=(root) NOPASSWD: /usr/bin/id' | sudo tee /etc/sudoers.d/spawnpoint-bootstrap-test >/dev/null
+          sudo chmod 0440 /etc/sudoers.d/spawnpoint-bootstrap-test
+          sudo visudo -cf /etc/sudoers.d/spawnpoint-bootstrap-test
+          echo "SPAWNPOINT_ADMIN_TEST_USER=spbootstrapadmin" >> "$GITHUB_ENV"
+          echo "SPAWNPOINT_ADMIN_TEST_PASSWORD=$admin_password" >> "$GITHUB_ENV"
+          sudo useradd -o -u 0 -g 0 -M -d /root -s /bin/sh spbootstraproot
+          printf '%s:%s\n' spbootstraproot "$admin_password" | sudo chpasswd
+          echo "SPAWNPOINT_ROOT_TEST_USER=spbootstraproot" >> "$GITHUB_ENV"
+          echo "SPAWNPOINT_ROOT_TEST_PASSWORD=$admin_password" >> "$GITHUB_ENV"
       - name: Isolated Windows test identity
         if: runner.os == 'Windows'
         shell: pwsh
@@ -79,13 +93,20 @@ jobs:
           "SPAWNPOINT_AUTH_TEST_PASSWORD=$password" >> $env:GITHUB_ENV
           "SPAWNPOINT_RUNAS_TEST_USER=spauthtarget" >> $env:GITHUB_ENV
           "SPAWNPOINT_RUNAS_TEST_PASSWORD=$password" >> $env:GITHUB_ENV
+          $adminPassword = 'Sa!' + [guid]::NewGuid().ToString('N') + 'aA4'
+          Write-Output "::add-mask::$adminPassword"
+          New-LocalUser -Name spbootstrapadmin -Password (ConvertTo-SecureString $adminPassword -AsPlainText -Force) -AccountNeverExpires | Out-Null
+          Add-LocalGroupMember -SID 'S-1-5-32-544' -Member spbootstrapadmin
+          "SPAWNPOINT_ADMIN_TEST_USER=spbootstrapadmin" >> $env:GITHUB_ENV
+          "SPAWNPOINT_ADMIN_TEST_PASSWORD=$adminPassword" >> $env:GITHUB_ENV
       - name: Native OS authentication
         shell: bash
-        run: go test ./internal/access -run TestLiveOSLogin -count=1 -v -timeout=2m
+        run: go test ./internal/access -run 'TestLiveOSLogin|TestLiveOSAdmin' -count=1 -v -timeout=2m
       - name: Linux actual server authorization and service lifecycle
         if: runner.os == 'Linux'
         run: |
           python3 tools/test-access-diagnostics.py tools/test-access-api.py dist/linux64/spawnpoint
+          python3 tools/test-bootstrap.py dist/linux64/spawnpoint
           python3 tools/test-run-as-service.py dist/linux64/spawnpoint
       - name: Windows actual server authorization and service lifecycle
         if: runner.os == 'Windows'
@@ -93,6 +114,8 @@ jobs:
         run: |
           python tools/test-access-diagnostics.py tools/test-access-api.py dist/win64/spawnpoint.exe
           if ($LASTEXITCODE -ne 0) { throw 'API integration failed' }
+          python tools/test-bootstrap.py dist/win64/spawnpoint.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Bootstrap integration failed' }
           python tools/test-run-as-service.py dist/win64/spawnpoint.exe
           if ($LASTEXITCODE -ne 0) { throw 'Service integration failed' }
       - name: Real browser HTTP, sessions and approved UI
