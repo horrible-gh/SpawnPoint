@@ -17,7 +17,7 @@ const fs=require('node:fs');const os=require('node:os');const path=require('node
   await page.locator('#runSpecific').click();await page.locator('#usernameInput').fill(process.env.SPAWNPOINT_RUNAS_TEST_USER);await page.locator('#passwordInput').fill(process.env.SPAWNPOINT_RUNAS_TEST_PASSWORD);
   assert.equal(await page.locator('#passwordInput').getAttribute('type'),'password');
   await page.locator('#dlgSave').click();await page.waitForFunction(()=>!document.getElementById('formBackdrop').classList.contains('open'));
-  const list=await (await page.request.get('/processes')).json();assert.equal(list.processes.length,1);assert.equal(list.processes[0].status,'stopped');assert.ok(list.processes[0].run_as.has_password);
+  const list=await (await page.request.get(`http://127.0.0.1:${port}/processes`)).json();assert.equal(list.processes.length,1);assert.equal(list.processes[0].status,'stopped');assert.ok(list.processes[0].run_as.has_password);
   assert.ok(!JSON.stringify(list).includes(process.env.SPAWNPOINT_RUNAS_TEST_PASSWORD));
   await page.locator('button[data-act="edit"]').first().click();assert.equal(await page.locator('#passwordInput').inputValue(),'');
   assert.equal(await page.locator('#usernameInput').inputValue(),process.env.SPAWNPOINT_RUNAS_TEST_USER);

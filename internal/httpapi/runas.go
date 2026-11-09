@@ -107,6 +107,10 @@ func (s *Server) guardExistingIdentity(w http.ResponseWriter, r *http.Request, i
 	if s.runner == nil {
 		return true
 	}
+	// Legacy Runner implementations cannot create execution identities.
+	if _, supported := s.runner.(identityRunner); !supported {
+		return true
+	}
 	if info, ok := s.runner.Get(id); ok && info.RunAs != nil {
 		return s.identityGuard(w, r, body)
 	}

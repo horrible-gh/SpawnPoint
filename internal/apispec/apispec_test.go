@@ -34,7 +34,7 @@ func TestEmbeddedHelpIsValidAndComplete(t *testing.T) {
 	if err := json.Unmarshal(doc["endpoints"], &endpoints); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"process.list", "process.create", "process.get", "process.replace", "process.delete", "process.run", "process.stop", "process.restart", "process.logs", "api.help"}
+	want := []string{"process.list", "process.create", "process.get", "process.replace", "process.delete", "process.run", "process.stop", "process.restart", "process.logs", "api.help", "runtime.info"}
 	if len(endpoints) != len(want) {
 		t.Fatalf("endpoint count %d, want %d", len(endpoints), len(want))
 	}
@@ -96,6 +96,7 @@ func TestRouteMismatchReportsBothValuesAndCoordinate(t *testing.T) {
 		endpoint := doc["endpoints"].([]any)[2].(map[string]any)
 		endpoint["path"] = "/wrong/{id}"
 	})
+
 	err := validate(damaged, httpapi.ContractSnapshot())
 	if err == nil {
 		t.Fatal("route mismatch passed validation")
