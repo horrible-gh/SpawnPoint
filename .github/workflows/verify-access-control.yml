@@ -42,7 +42,7 @@ jobs:
           go build ./...
           go test ./...
           node tools/test-autostart-ui.cjs
-          SPAWNPOINT_LIVE_SPAWN=1 go test ./internal/runner -run AutoStart -count=1 -timeout=2m
+          SPAWNPOINT_LIVE_SPAWN=1 go test ./internal/runner -run 'AutoStart|TestLiveIdentity' -count=1 -v -timeout=2m
       - name: Linux packaging and race checks
         if: runner.os == 'Linux'
         run: |

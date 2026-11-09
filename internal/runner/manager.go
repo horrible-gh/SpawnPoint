@@ -73,6 +73,9 @@ type Manager struct {
 	// current implementation defers it the same way (0008-L 2.3).
 	serverJob     *jobs.Group
 	serverJobDone bool
+	// Authenticated Windows launches may belong to unrelated inherited job
+	// hierarchies; each retains its own kernel kill-on-close backstop.
+	identityServerJobs map[*jobs.Group]struct{}
 	// noChildJobs is set once the operating system has refused a nested
 	// assignment. From then on the server group is the only one and stops go
 	// through the tree walk (E-19).
@@ -476,9 +479,14 @@ func (m *Manager) CloseServerJob() {
 	job := m.serverJob
 	m.serverJob = nil
 	m.serverJobDone = true
+	identityJobs := m.identityServerJobs
+	m.identityServerJobs = nil
 	m.mu.Unlock()
 	if job != nil {
 		job.Close()
+	}
+	for group := range identityJobs {
+		group.Close()
 	}
 }
 
@@ -723,7 +731,7 @@ func (m *Manager) finishRun(e *entry, gen, code int) {
 //
 // deadline caps the whole operation; a zero deadline means the full budget,
 // which is what a user-initiated stop gets. During shutdown it is the sequence's
-// deadline, shared with every other child.
+// deadline, shared by every other child.
 func (m *Manager) stopChild(e *entry, reason string, deadline time.Time) {
 	e.mu.Lock()
 	if e.status != StatusRunning {
