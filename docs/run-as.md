@@ -31,14 +31,29 @@ only `mode`, `username`, optional `domain`, and `has_password`—never the crede
 
 ## Windows
 
-Windows authenticates with CreateProcessWithLogonW and loads the target profile.
+The existing installer continues to run SpawnPoint as **LocalService**. No service
+account change, blanket elevation, UAC bypass, or additional privilege is installed.
+Callers with an already-enabled SeImpersonatePrivilege use LogonUserW followed by
+CreateProcessWithTokenW. Other callers use CreateProcessWithLogonW. The choice is
+made before authentication; a rejected password is never retried through another API.
+Both paths request the target user's profile. LocalService is the tested Windows
+service configuration; LocalSystem deployments are not part of the supported setup.
+
 The target must have the applicable OS logon rights, access to SpawnPoint's executable,
 and access to its working directory. Secondary Logon must be available. Windows
-Hello PINs are not account passwords. The installer uses LocalService; LocalSystem
-is not a supported caller for this API. No blanket elevation or UAC bypass is added.
+Hello PINs are not account passwords. Account policies still apply.
+
+For token-based service execution, the caller creates a private noninteractive
+desktop before the child starts. Its ACL permits SYSTEM, the caller, and only the
+newly authenticated logon-session SID. Window-station access is granted to that
+same unique logon SID, without WRITE_DAC or WRITE_OWNER. The server's existing
+desktop is not opened to the target. The temporary station ACE is revoked and the
+private desktop handle is closed on launch failure or process exit. Cleanup failure
+is reported without secrets; a surviving ACE names that particular logon session,
+not all future sessions of the account.
+
 A suspended supervisor is placed in parent-owned job objects before the user command
 starts. Stop/Restart therefore operate on the whole supervised process tree.
-
 Credentials use user-scoped Windows DPAPI. Changing SpawnPoint's own service identity
 or moving its database to a different machine requires reentering passwords.
 
@@ -83,3 +98,26 @@ Build using the existing `tools/dist.ps1` / `tools/dist.sh`, replace the executa
 and restart SpawnPoint. Migration 005 adds the identity column without changing
 existing commands or their automatic-start preferences. No existing data is deleted.
 The retained HTML under `docs/ui` is a design reference only, not a production route.
+
+## Verification
+
+Implementation commit `79ea50a1336b4fe9726ae48a210e32353a0fab6e` passed both jobs in
+[Actions run 42547870887](https://github.com/horrible-gh/SpawnPoint/actions/runs/42547870887)
+on 2026-11-09. The matrix used GitHub-hosted Ubuntu and Windows Server 2025 runners.
+This verifies the implementation on those environments, not every Windows domain,
+PAM configuration, or the operator's production machine.
+
+The workflow runs full Go builds and unit regressions, both distribution scripts,
+existing automatic-start/UI checks, and Linux race checks. Native account tests
+exercise valid and invalid passwords without a service-account fallback. Real server
+tests cover identity, target environment, output, stop, editing with retained
+credentials, encrypted SQLite, restore, automatic start, clearing the identity, and
+deletion. Service tests install actual systemd and LocalService fixtures with the
+shipped installers and verify account identity, descendant termination, service
+restart, credential reuse, and automatic start. Isolated test accounts and service
+fixtures are confined to the disposable CI runners.
+
+The browser test uses a running server, saves through the approved editor, checks
+response/password redaction, reopens the existing registration, and captures 390,
+1440, and 2560-pixel layouts without JavaScript errors or dialog overflow. Screenshots
+are attached to the workflow run; they are not mock-API renderings.
