@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Real server, real OS account, SQLite restore and process lifecycle regression."""
+from contextlib import closing
 import json, os, pathlib, socket, sqlite3, subprocess, sys, tempfile, time, urllib.error, urllib.request
 USER=os.environ['SPAWNPOINT_RUNAS_TEST_USER']; PASSWORD=os.environ['SPAWNPOINT_RUNAS_TEST_PASSWORD']
 EXE=str(pathlib.Path(sys.argv[1]).resolve()); WIN=os.name=='nt'
@@ -41,7 +42,7 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-account-') as tmp:
     try:
         start();runtime=call('/runtime')[1]
         assert runtime['run_as_supported'],runtime
-        command=('whoami & echo HOME=%USERPROFILE% & echo ENV=%SPAWNPOINT_RUNAS_CHECK% & ping -n 60 127.0.0.1 >nul' if WIN else 'id -un; printf "HOME=%s\\nENV=%s\\n" "$HOME" "$SPAWNPOINT_RUNAS_CHECK"; echo CHILD_PID=$$; sleep 60')
+        command=('whoami & echo HOME=%USERPROFILE% & echo ENV=%SPAWNPOINT_RUNAS_CHECK% & ping -n 60 127.0.0.1 >nul' if WIN else 'id -un; printf "HOME=%s\nENV=%s\n" "$HOME" "$SPAWNPOINT_RUNAS_CHECK"; echo CHILD_PID=$$; sleep 60')
         body={'label':'identity-e2e','cmd':command,'env':{'SPAWNPOINT_RUNAS_CHECK':'value,with=punctuation'},'start':False,'auto_start':True,'run_as':{'mode':'user','username':USER,'password':PASSWORD}}
         status,out=call('/processes',body); assert status==200 and out['persisted'] and out['process']['status']=='stopped',out
         item=out['process'];id=item['id'];assert item['run_as']['has_password']
@@ -56,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-account-') as tmp:
         # Empty password retains only this same account. An identity edit alone cannot run it.
         body['label']='edited';body['run_as'].pop('password')
         status,out=call('/processes/'+id,body,'PUT');assert status==200 and out['persisted'] and out['process']['status']=='stopped',out
-        with sqlite3.connect(db) as conn:
+        with closing(sqlite3.connect(db)) as conn:
             stored=conn.execute('select run_as_json from runner_entry where id=?',(id,)).fetchone()[0]
         assert 'sealed' in stored and PASSWORD not in stored
         assert PASSWORD.encode() not in db.read_bytes()
@@ -71,7 +72,7 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-account-') as tmp:
         assert PASSWORD not in json.dumps(out)+badlog
         body['run_as']={'mode':'service'};body['auto_start']=False
         status,out=call('/processes/'+id,body,'PUT');assert status==200 and out['persisted'] and 'run_as' not in out['process'],out
-        with sqlite3.connect(db) as conn:assert conn.execute('select run_as_json from runner_entry where id=?',(id,)).fetchone()[0]==''
+        with closing(sqlite3.connect(db)) as conn:assert conn.execute('select run_as_json from runner_entry where id=?',(id,)).fetchone()[0]==''
         for entry in (id,badid):assert call('/processes/'+entry,method='DELETE')[0]==200
         print('PASS: real account identity, clean environment, output, stop, edit/retain, encrypted SQLite, restart/auto-start, wrong-password/no-fallback, clear identity and delete')
     finally:

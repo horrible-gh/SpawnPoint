@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""CI-only: exercise the shipped installer and execution under its service identity.
+Never run against an existing installation. GitHub-hosted disposable runners only.
+"""
+import ctypes
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import time
+import urllib.request
+
+if os.environ.get('GITHUB_ACTIONS') != 'true':
+    raise SystemExit('This destructive service lifecycle test is restricted to disposable CI runners.')
+WIN = os.name == 'nt'
+USER = os.environ['SPAWNPOINT_RUNAS_TEST_USER']
+PASSWORD = os.environ['SPAWNPOINT_RUNAS_TEST_PASSWORD']
+EXE = str(Path(sys.argv[1]).resolve())
+URL = 'http://127.0.0.1:7527'
+NAME = 'SpawnPoint' if WIN else 'spawnpoint'
+
+
+def run(*args):
+    return subprocess.run(args, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True).stdout
+
+
+def api(path, data=None, method=None):
+    req = urllib.request.Request(URL + path, data=None if data is None else json.dumps(data).encode(),
+                                 method=method, headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=45) as response:
+        return json.load(response)
+
+
+def until(fn, seconds=30):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        try:
+            result = fn()
+            if result:
+                return result
+        except (OSError, ValueError):
+            pass
+        time.sleep(.2)
+    raise AssertionError('Service test condition timed out')
+
+
+def control(action):
+    if WIN:
+        run('sc.exe', action, NAME)
+        if action == 'stop':
+            until(lambda: 'STOPPED' in run('sc.exe', 'query', NAME))
+    else:
+        run('sudo', 'systemctl', action, NAME)
+    if action == 'start':
+        until(lambda: api('/healthz').get('ok'))
+
+
+def process_watch(pid):
+    if not WIN:
+        # Preserve identity across potential PID reuse; readability means exit.
+        import select
+        descriptor = os.pidfd_open(pid)
+        return lambda: bool(select.select([descriptor], [], [], 0)[0]), lambda: os.close(descriptor)
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    kernel.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    handle = kernel.OpenProcess(0x100000, False, pid)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    return lambda: kernel.WaitForSingleObject(handle, 0) == 0, lambda: kernel.CloseHandle(handle)
+
+
+if WIN:
+    if subprocess.run(['sc.exe', 'query', NAME], capture_output=True).returncode == 0:
+        raise SystemExit('Existing service found; refusing to touch it.')
+    data_dir = Path(os.environ['ProgramData']) / NAME
+    install_dir = Path(os.environ['ProgramFiles']) / NAME
+    if data_dir.exists() or install_dir.exists():
+        raise SystemExit('Existing installation found; refusing to touch it.')
+else:
+    if Path('/etc/systemd/system/spawnpoint.service').exists():
+        raise SystemExit('Existing service found; refusing to touch it.')
+    data_dir = Path('/var/lib/spawnpoint')
+    if data_dir.exists() or Path('/opt/spawnpoint').exists():
+        raise SystemExit('Existing installation found; refusing to touch it.')
+
+installed = False
+handles = []
+try:
+    if WIN:
+        run('powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+            'tools/install-service.ps1', '-SourceExe', EXE)
+    else:
+        run('sudo', 'sh', 'tools/install-service.sh', '--user', os.environ['USER'], '--source', EXE)
+    installed = True
+    control('start')
+    runtime = api('/runtime')
+    assert runtime['run_as_supported'], runtime
+    if WIN:
+        assert runtime['service_account'].lower().endswith('local service'), runtime
+        command = 'whoami & echo PROFILE=%USERPROFILE% & powershell -NoProfile -NonInteractive -Command "Write-Output (\'CHILD_PID=\' + $PID); Start-Sleep -Seconds 90"'
+    else:
+        assert runtime['service_account'] == os.environ['USER'], runtime
+        command = 'id -un; printf "PROFILE=%s\\n" "$HOME"; sleep 90 & echo CHILD_PID=$!; wait'
+    body = {'cmd': command, 'label': 'service-account-integration', 'auto_start': True,
+            'run_as': {'mode': 'user', 'username': USER, 'password': PASSWORD}}
+    out = api('/processes', body)
+    assert out['persisted'] and out['process']['status'] == 'running', out
+    id = out['process']['id']
+
+    def output():
+        text = api('/processes/' + id + '/logs').get('text', '')
+        return text if 'CHILD_PID=' in text else None
+
+    text = until(output)
+    assert USER.lower() in text.lower() and 'PROFILE=' in text, text
+    assert PASSWORD not in text
+    pid = int(re.findall(r'CHILD_PID=(\d+)', text)[-1])
+    gone, close = process_watch(pid)
+    handles.append(close)
+    assert api('/processes/' + id + '/stop', {}, 'POST')['process']['status'] == 'stopped'
+    until(gone)
+    # The same encrypted credential must work after a real SCM/systemd restart.
+    control('stop')
+    control('start')
+    until(lambda: api('/processes/' + id)['process']['status'] == 'running')
+    until(lambda: len(re.findall(r'CHILD_PID=(\d+)', output() or '')) >= 2)
+    text = output()
+    pid = int(re.findall(r'CHILD_PID=(\d+)', text)[-1])
+    gone, close = process_watch(pid)
+    handles.append(close)
+    control('stop')
+    until(gone)
+    assert PASSWORD.encode() not in (data_dir / 'spawnpoint.db').read_bytes()
+    print('PASS: shipped service installer, real service identity, authenticated target user, descendant termination, encrypted restart/auto-start and service shutdown')
+finally:
+    for close in handles:
+        close()
+    if installed:
+        try:
+            control('stop')
+        except (subprocess.CalledProcessError, AssertionError):
+            pass
+        if WIN:
+            run('sc.exe', 'delete', NAME)
+            shutil.rmtree(data_dir, ignore_errors=True)
+            shutil.rmtree(install_dir, ignore_errors=True)
+        else:
+            run('sudo', 'systemctl', 'disable', NAME)
+            run('sudo', 'rm', '/etc/systemd/system/spawnpoint.service')
+            run('sudo', 'systemctl', 'daemon-reload')
+            run('sudo', 'rm', '-rf', '/var/lib/spawnpoint', '/var/log/spawnpoint', '/opt/spawnpoint')
