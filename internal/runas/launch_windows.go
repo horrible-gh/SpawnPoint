@@ -84,11 +84,10 @@ func launch(s *Spec, password []byte) (*Child, error) {
 		outWrite.Close()
 		return nil, err
 	}
-	// CreateProcessWithLogonW duplicates these explicit standard handles into
-	// the authenticated process; no password ever enters the request pipe.
+	// Explicit standard handles only; passwords never enter the request pipe.
 	si := syscall.StartupInfo{Cb: uint32(unsafe.Sizeof(syscall.StartupInfo{})), Flags: syscall.STARTF_USESTDHANDLES | syscall.STARTF_USESHOWWINDOW, ShowWindow: syscall.SW_HIDE, StdInput: syscall.Handle(requestRead.Fd()), StdOutput: syscall.Handle(outWrite.Fd()), StdErr: syscall.Handle(outWrite.Fd())}
 	var pi syscall.ProcessInformation
-	r, _, callErr := createWithLogon.Call(ptr(user), ptr(domain), ptr(pw), 1, ptr(app), ptr(line), 0x00000004|0x08000000|0x00000400, 0, 0, uintptr(unsafe.Pointer(&si)), uintptr(unsafe.Pointer(&pi)))
+	r, callErr := startWithCredentials(user, domain, pw, app, line, &si, &pi)
 	runtime.KeepAlive(user)
 	runtime.KeepAlive(domain)
 	runtime.KeepAlive(pw)
