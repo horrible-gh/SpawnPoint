@@ -195,6 +195,109 @@
     .ops{gap:4px}
     .op{width:27px;height:27px;font-size:12px}
   }
+
+/* Command editor: layout and palette taken from the approved HTML mockup. */
+#formBackdrop {padding:24px;background:rgba(4,7,11,.69);backdrop-filter:blur(2.5px)}
+#formBackdrop .sp-editor {
+  --sp-base:#0d1015;--sp-surface:#141920;--sp-edge:#2a3440;--sp-text:#e6edf5;
+  --sp-accent:#82b6f5;--sp-mono:"Cascadia Code","JetBrains Mono",Consolas,Monaco,monospace;
+  --sp-sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",Arial,sans-serif;
+  width:min(770px,100%);max-height:min(90dvh,835px);height:auto;min-height:0;
+  display:flex;flex-direction:column;overflow:hidden;border:1px solid #414e5e;
+  border-radius:13px;background:var(--sp-surface);color:var(--sp-text);
+  font:13px/1.5 var(--sp-sans);box-shadow:0 32px 90px #000a,0 2px 10px #0005;
+}
+.sp-editor .sp-ico{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.sp-editor button{cursor:pointer;font-family:var(--sp-sans)}
+.sp-editor button:focus-visible,.sp-editor input:focus-visible,.sp-editor textarea:focus-visible{outline:2px solid var(--sp-accent);outline-offset:2px}
+.sp-editor button:disabled{opacity:.42;cursor:not-allowed}
+.sp-editor .sp-spacer{flex:1}
+.sp-editor .sp-head{display:flex;align-items:center;gap:13px;flex-shrink:0;padding:20px 25px 18px;border-bottom:1px solid var(--sp-edge)}
+.sp-editor .sp-dialog-icon{width:35px;height:35px;display:grid;place-items:center;border:1px solid #35516d;background:#1f3449;border-radius:9px;color:#8ebef0;flex-shrink:0}
+.sp-editor .sp-dialog-icon .sp-ico{width:18px;height:18px}
+.sp-editor .sp-head h2{font-size:19px;font-weight:750;letter-spacing:-.45px;line-height:1.25;margin:0}
+.sp-editor .sp-kind{font:10px var(--sp-mono);color:#7d94aa;letter-spacing:.8px;margin-top:4px}
+.sp-editor .sp-close{display:grid;place-items:center;width:31px;height:31px;flex-shrink:0;border:1px solid #354251;background:#222a35;color:#a1b0c2;border-radius:7px}
+.sp-editor .sp-close:hover{color:var(--sp-text);background:#293544}
+.sp-editor .sp-body{padding:22px 25px 19px;overflow-y:auto;min-height:0;scrollbar-color:#384758 transparent;scrollbar-width:thin}
+.sp-editor .sp-field-group{display:grid;grid-template-columns:1fr 1.42fr;gap:13px;margin-bottom:15px}
+.sp-editor .sp-field{min-width:0}
+.sp-editor .sp-field label,.sp-editor .sp-field-label{display:flex;align-items:center;gap:8px;font-weight:700;color:#b8c5d4;font-size:12px;margin:0 0 7px}
+.sp-editor .sp-required{color:var(--sp-accent);font-size:13px}
+.sp-editor .sp-field input,.sp-editor .sp-field textarea{color:#e8f0f9;width:100%;background:#0f151c;border:1px solid #354353;border-radius:7px;padding:10px 12px;transition:border-color .12s;font:12px/1.55 var(--sp-mono);outline:0}
+.sp-editor .sp-field input::placeholder,.sp-editor .sp-field textarea::placeholder{color:#687b8e}
+.sp-editor .sp-field input:focus,.sp-editor .sp-field textarea:focus{border-color:#88b5ec;box-shadow:0 0 0 3px #72a5e51f}
+.sp-editor .sp-field input{height:42px}
+.sp-editor .sp-field textarea.cmd{display:block;resize:none;min-height:77px;max-height:175px;overflow-y:auto;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.sp-editor .sp-command{margin-bottom:18px}
+.sp-editor .sp-separator{height:1px;background:#2b3541;margin:18px 0}
+.sp-editor .sp-section-title{font:700 10px var(--sp-mono);letter-spacing:1.5px;color:#8d9db0;margin:0 0 14px}
+.sp-editor .sp-exec-row{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}
+.sp-editor .sp-run-as{flex:1;min-width:0}
+.sp-editor .sp-segment{display:flex;align-items:center;gap:2px;background:#0e141b;border:1px solid #34404d;padding:3px;border-radius:8px;width:fit-content;max-width:100%}
+.sp-editor .sp-segment button{min-width:152px;display:flex;align-items:center;justify-content:center;gap:8px;color:#91a3b7;background:transparent;border:1px solid transparent;border-radius:5px;padding:8px 12px;font-size:12px;font-weight:650;white-space:nowrap}
+.sp-editor .sp-segment button.active{border-color:#405e7f;background:#24394d;color:#deecfc;box-shadow:0 2px 6px #0005}
+.sp-editor .sp-segment .sp-ico{width:14px;height:14px}
+.sp-editor .sp-auto-option{min-width:132px;text-align:right;margin-top:0}
+.sp-editor .sp-auto-option label{display:flex;justify-content:flex-end;align-items:center;gap:11px;color:#c5d0dc;font-size:12px;font-weight:650;cursor:pointer}
+.sp-editor .sp-auto-option small{display:block;font:10px var(--sp-sans);color:#8291a3;margin-top:5px}
+.sp-editor .sp-auto-option input{position:absolute;width:1px;height:1px;opacity:0;padding:0}
+.sp-editor .sp-switch{position:relative;display:inline-flex;width:33px;height:19px;border-radius:40px;background:#3b4856;vertical-align:middle;transition:background .16s}
+.sp-editor .sp-switch::after{position:absolute;top:3px;left:3px;content:"";width:13px;height:13px;border-radius:50%;background:#d0d9e5;transition:transform .16s}
+.sp-editor .sp-auto-option input:checked+.sp-switch{background:#397e66}
+.sp-editor .sp-auto-option input:checked+.sp-switch::after{transform:translateX(14px);background:#f4fff9}
+.sp-editor .sp-auto-option input:focus-visible+.sp-switch{outline:2px solid var(--sp-accent);outline-offset:3px}
+.sp-editor .sp-env-trigger{width:100%;background:#161e27;border:1px solid #2d3a48;border-radius:8px;display:flex;align-items:center;gap:11px;padding:12px 14px;text-align:left;color:#bfcbda}
+.sp-editor .sp-env-trigger:hover{background:#1c2631;border-color:#40546a}
+.sp-editor .sp-env-trigger strong{font-size:12px;font-weight:700;color:#d0dbe7}
+.sp-editor .sp-env-count{font:10px var(--sp-mono);color:#8296a9;padding:2px 6px;background:#26313c;border-radius:4px}
+.sp-editor .sp-chevron{margin-left:auto;transition:transform .15s}
+.sp-editor .sp-env-trigger[aria-expanded="true"] .sp-chevron{transform:rotate(180deg)}
+.sp-editor .sp-env-panel{padding:14px 0 0}
+.sp-editor [hidden]{display:none!important}
+.sp-editor .sp-env-list{display:flex;flex-direction:column;gap:9px}
+.sp-editor .sp-env-entry{display:grid;grid-template-columns:1fr 1.25fr 30px;gap:9px;align-items:center}
+.sp-editor .sp-env-entry input{height:38px;width:100%;min-width:0;border:1px solid #374454;border-radius:6px;background:#10161d;color:#e0e9f2;padding:8px 10px;font:12px var(--sp-mono)}
+.sp-editor .sp-env-remove{width:30px;height:30px;display:grid;place-items:center;border:0;background:transparent;color:#8898a9;border-radius:5px}
+.sp-editor .sp-env-remove:hover{background:#34272a;color:#f2aaaa}
+.sp-editor .sp-env-headers{display:grid;grid-template-columns:1fr 1.25fr 30px;gap:9px;color:#798da2;font:10px var(--sp-mono);margin-bottom:6px}
+.sp-editor .sp-add{display:inline-flex;gap:6px;align-items:center;background:transparent;border:0;color:#91bdeb;font-size:11px;font-weight:650;padding:8px 0 0}
+.sp-editor .sp-add .sp-ico{width:14px;height:14px}
+.sp-editor .sp-foot{padding:15px 25px;flex-shrink:0;border-top:1px solid var(--sp-edge);background:#161c24;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.sp-editor .sp-foot-meta{font:10px var(--sp-mono);color:#7c8ea0;letter-spacing:.1px}
+.sp-editor .sp-error{display:none;color:#f2aaaa;font-size:12px;flex-basis:100%;overflow-wrap:anywhere}
+.sp-editor .sp-error:not(:empty){display:block}
+.sp-editor .sp-foot:has(.sp-error:not(:empty)) .sp-foot-meta{display:none}
+.sp-editor .sp-btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;height:38px;padding:0 16px;white-space:nowrap;border:1px solid #445262;border-radius:7px;font-size:12px;font-weight:720;color:#c8d4e1;background:#222b36}
+.sp-editor .sp-btn:hover:not(:disabled){background:#2b3745;border-color:#61758b}
+.sp-editor .sp-plain{background:transparent;border-color:transparent}
+.sp-editor .sp-save{background:#273c51;border-color:#48617a;color:#dde9f6}
+.sp-editor .sp-main{background:#7eb7f3;border-color:#8cbffc;color:#0b1b2c;font-weight:780;min-width:150px}
+.sp-editor .sp-main:hover:not(:disabled){background:#9bcbfa;border-color:#acd7fc}
+@media(max-width:860px){#formBackdrop{padding:12px}#formBackdrop .sp-editor{max-height:calc(100dvh - 24px)}}
+@media(max-width:590px){
+  #formBackdrop{padding:0}#formBackdrop .sp-editor{height:100dvh;max-height:100dvh;width:100%;border-radius:0;border-left:0;border-right:0}
+  .sp-editor .sp-head{padding:16px}.sp-editor .sp-body{padding:18px 16px}.sp-editor .sp-foot{padding:12px;gap:6px}
+  .sp-editor .sp-field-group{grid-template-columns:1fr;gap:12px}.sp-editor .sp-exec-row{flex-direction:column;align-items:stretch}
+  .sp-editor .sp-segment{width:100%}.sp-editor .sp-segment button{min-width:0;flex:1;padding:8px 6px}
+  .sp-editor .sp-auto-option{text-align:left}.sp-editor .sp-auto-option label{justify-content:flex-start}
+  .sp-editor .sp-foot-meta,.sp-editor .sp-foot>.sp-spacer{display:none}
+  .sp-editor .sp-btn{padding:0 11px;flex:1;font-size:11px;min-width:0}
+}
+@media(max-height:670px) and (min-width:591px){
+  #formBackdrop{padding:14px}#formBackdrop .sp-editor{max-height:calc(100dvh - 28px)}
+  .sp-editor .sp-head{padding:14px 20px}.sp-editor .sp-body{padding:17px 20px}.sp-editor .sp-foot{padding:10px 20px}
+}
+@media(prefers-reduced-motion:reduce){.sp-editor *{animation:none!important;transition:none!important}}
+
+.sp-editor .sp-identity-fields{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:15px}
+.sp-editor .sp-input-note{font:10px/1.5 var(--sp-sans);color:#6e8296;margin-top:5px}
+.sp-editor .sp-password-wrap{position:relative}
+.sp-editor .sp-password-wrap input{padding-right:44px}
+.sp-editor .sp-reveal{position:absolute;right:7px;top:7px;border:0;background:transparent;color:#71869b;width:28px;height:28px;display:grid;place-items:center;border-radius:4px}
+.sp-editor .sp-reveal:hover{color:#b9d5f2;background:#24313f}
+@media(max-width:590px){.sp-editor .sp-identity-fields{grid-template-columns:1fr;gap:12px}}
+
 </style>
 </head>
 <body>
@@ -258,50 +361,57 @@
 </main>
 
 <!-- New / Edit dialog. Backdrop click never closes it — only ✕ / Cancel / Esc do. -->
-<div class="backdrop" id="formBackdrop">
-  <div class="dlg" id="formDlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
-    <div class="dlghead">
-      <h2 id="dlgTitle">New command</h2>
-      <div class="spacer"></div>
-      <button class="x" id="dlgClose" title="Close">✕</button>
+<!-- Command editor, based on docs/ui/approved-command-editor.html. -->
+<div class="backdrop sp-form" id="formBackdrop">
+  <section class="dlg sp-editor" id="formDlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+    <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true" style="position:absolute;overflow:hidden">
+      <symbol id="sp-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3M13 16h4"/></symbol>
+      <symbol id="sp-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></symbol>
+      <symbol id="sp-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="8" rx="2"/><rect x="3" y="13" width="18" height="8" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/></symbol>
+      <symbol id="sp-x" viewBox="0 0 24 24"><path d="M6 6 18 18M18 6 6 18"/></symbol>
+      <symbol id="sp-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="sp-play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8z"/></symbol>
+      <symbol id="sp-restart" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-1 5M20 4v7h-7"/></symbol>
+      <symbol id="sp-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="sp-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+    </svg>
+    <div class="sp-head">
+      <span class="sp-dialog-icon"><svg class="sp-ico"><use href="#sp-terminal"/></svg></span>
+      <div><h2 id="dlgTitle">New command</h2><div class="sp-kind">COMMAND CONFIGURATION</div></div>
+      <div class="sp-spacer"></div>
+      <button class="sp-close" id="dlgClose" type="button" aria-label="Close"><svg class="sp-ico"><use href="#sp-x"/></svg></button>
     </div>
-    <div class="dlgbody">
-      <div class="field">
-        <label for="fLabel">Label</label>
-        <input id="fLabel" placeholder="Display name (optional)">
+    <div class="sp-body">
+      <div class="sp-field-group">
+        <div class="sp-field"><label for="fLabel">Name</label><input id="fLabel" autocomplete="off" maxlength="128" placeholder="Process name"></div>
+        <div class="sp-field"><label for="fCwd">Working directory</label><input id="fCwd" autocomplete="off" spellcheck="false" placeholder="Project directory"></div>
       </div>
-      <div class="field">
-        <label for="fCmd">Command</label>
-        <textarea id="fCmd" class="cmd" rows="1" placeholder="Command to run… (example: python -m http.server 8200)"></textarea>
-        <span class="hint">One line. Long commands grow downward instead of scrolling sideways.</span>
+      <div class="sp-field sp-command"><label for="fCmd">Command <span class="sp-required" aria-hidden="true">*</span></label><textarea id="fCmd" class="cmd" rows="2" spellcheck="false" aria-required="true" placeholder="Command to execute"></textarea></div>
+      <div class="sp-separator"></div>
+      <h3 class="sp-section-title">EXECUTION</h3>
+      <div class="sp-exec-row">
+        <div class="sp-run-as"><div class="sp-field-label">Run as</div><div class="sp-segment" role="group" aria-label="Execution identity">
+          <button class="active" id="runService" type="button" aria-pressed="true" title="Use the account running SpawnPoint"><svg class="sp-ico"><use href="#sp-server"/></svg>Service account</button>
+          <button id="runSpecific" type="button" aria-pressed="false" disabled title="Checking execution capabilities"><svg class="sp-ico"><use href="#sp-user"/></svg>Specific user</button>
+        </div></div>
+        <div class="sp-auto-option"><label for="fAutoStart">Auto start<input id="fAutoStart" type="checkbox" role="switch" aria-describedby="autoStartHint"><span class="sp-switch" aria-hidden="true"></span></label><small id="autoStartHint">When SpawnPoint starts</small></div>
       </div>
-      <div class="row2">
-        <div class="field">
-          <label for="fCwd">Working directory</label>
-          <input id="fCwd" placeholder="Working directory (optional)">
-        </div>
-        <div class="field">
-          <label for="fEnv">Environment</label>
-          <input id="fEnv" placeholder="KEY=VAL,KEY2=VAL2 (optional)">
-        </div>
+      <div class="sp-identity-fields" id="identityFields" hidden>
+        <div class="sp-field"><label for="usernameInput">Username</label><input id="usernameInput" spellcheck="false" autocomplete="off" maxlength="256" placeholder="runner-user"><div class="sp-input-note" id="userHint"></div></div>
+        <div class="sp-field"><label for="passwordInput">Password</label><div class="sp-password-wrap"><input id="passwordInput" type="password" autocomplete="new-password" maxlength="4096" placeholder="Enter password"><button type="button" class="sp-reveal" id="passwordReveal" aria-label="Show password"><svg class="sp-ico" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button></div><div class="sp-input-note" id="passwordHint"></div></div>
       </div>
-      <div class="field">
-        <label class="toggle autostart-setting">
-          <input id="fAutoStart" type="checkbox" role="switch" aria-describedby="autoStartHint">
-          <span class="sw" aria-hidden="true"></span>
-          <span>Auto start</span>
-        </label>
-        <span class="hint" id="autoStartHint">Start this command when SpawnPoint starts. Off by default.</span>
-      </div>
+      <div class="sp-separator"></div>
+      <input id="fEnv" type="hidden" value="[]">
+      <button class="sp-env-trigger" id="envTrigger" type="button" aria-expanded="false" aria-controls="envPanel"><svg class="sp-ico"><use href="#sp-list"/></svg><strong>Environment variables</strong><span class="sp-env-count" id="envCount">0</span><svg class="sp-ico sp-chevron"><use href="#sp-chevron"/></svg></button>
+      <div class="sp-env-panel" id="envPanel" hidden><div class="sp-env-headers" aria-hidden="true"><span>KEY</span><span>VALUE</span></div><div id="envList" class="sp-env-list"></div><button class="sp-add" id="addEnv" type="button"><svg class="sp-ico"><use href="#sp-plus"/></svg>Add variable</button></div>
     </div>
-    <div class="dlgfoot">
-      <span class="dlgnote" id="dlgNote">Clicking the backdrop does not close this</span>
-      <div class="spacer"></div>
-      <button class="btn btn-ghost" id="dlgCancel">Cancel</button>
-      <button class="btn btn-ghost" id="dlgSave">Save</button>
-      <button class="btn btn-run" id="dlgSaveRun">Save &amp; Run</button>
+    <div class="sp-foot">
+      <span class="sp-foot-meta" id="editorMeta">CHANGES APPLY ON NEXT RUN</span><span class="sp-error" id="dlgNote" role="alert"></span><div class="sp-spacer"></div>
+      <button class="sp-btn sp-plain" id="dlgCancel" type="button">Cancel</button>
+      <button class="sp-btn sp-save" id="dlgSave" type="button">Save</button>
+      <button class="sp-btn sp-main" id="dlgSaveRun" type="button">Save &amp; Run</button>
     </div>
-  </div>
+  </section>
 </div>
 
 <!-- Confirm dialog (delete / discard) -->
@@ -347,6 +457,7 @@
     try { window.localStorage.setItem(MAX_LINES_KEY, String(n)); } catch (e) {}
   }
 
+  var apiToken = ""; // Kept only in this tab, never persisted.
   var state = {
     processes: [],
     selectedId: null,
@@ -480,13 +591,14 @@
     clearTimeout(state.refreshTimer);
     clearTimeout(state.statusTimer);
     el.connDot.classList.add("off");
-    showStatus("Authentication required — this server is running with SPAWNPOINT_API_TOKENS set.", "warn");
+    showStatus("Authentication required · click to enter API token", "warn");
     showError("");
   }
 
   function api(path, opts){
     opts = opts || {};
     var headers = opts.headers || {};
+    if(apiToken) headers["Authorization"]="Bearer "+apiToken;
 
     if (opts.body) headers["Content-Type"] = "application/json";
     return fetch(path, {
@@ -533,19 +645,29 @@
     state.processes.push(p);
   }
 
+  // Structured editor values, not comma-delimited text. Preserve every value byte.
   function parseEnv(text){
-    var env = {};
-    (text || "").split(",").forEach(function(pair){
-      pair = pair.trim();
-      if (!pair) return;
-      var i = pair.indexOf("=");
-      if (i < 0) return;
-      env[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
+    var rows;
+    try { rows = JSON.parse(text || "[]"); }
+    catch (_) { throw new Error("Invalid environment entries."); }
+    if (!Array.isArray(rows)) throw new Error("Invalid environment entries.");
+    var env = Object.create(null);
+    rows.forEach(function(pair, index){
+      if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== "string" || typeof pair[1] !== "string"){
+        throw new Error("Invalid environment entry " + (index + 1) + ".");
+      }
+      var key = pair[0].trim(), value = pair[1];
+      if (!key && !value) return;
+      if (!key) throw new Error("Enter a name for variable " + (index + 1) + ".");
+      if (/[=\u0000\r\n]/.test(key)) throw new Error("Invalid name for variable " + (index + 1) + ".");
+      if (/\u0000/.test(value)) throw new Error("Invalid value for variable " + (index + 1) + ".");
+      if (Object.prototype.hasOwnProperty.call(env, key)) throw new Error("Duplicate name for variable " + (index + 1) + ".");
+      env[key] = value;
     });
     return Object.keys(env).length ? env : undefined;
   }
   function envText(env){
-    return Object.keys(env || {}).map(function(k){ return k + "=" + env[k]; }).join(",");
+    return JSON.stringify(Object.keys(env || {}).map(function(key){ return [key, env[key]]; }));
   }
 
   function fmtDuration(ms){
@@ -783,6 +905,7 @@
      settings on the next restart either way. Auto start controls future server
      boots independently of these immediate actions. */
   function openForm(mode, p){
+    dlg.returnFocus = document.activeElement;
     dlg.mode = mode;
     dlg.editingId = p ? p.id : null;
     dlg.dirty = false;
@@ -792,9 +915,10 @@
     el.fCwd.value = p ? (p.cwd || "") : "";
     el.fEnv.value = p ? envText(p.env) : "";
     el.fAutoStart.checked = !!(p && p.auto_start);
+    syncEditor(p);
     el.dlgSave.style.display = "";
     el.dlgSaveRun.textContent = mode === "edit" ? "Save & Restart" : "Save & Run";
-    setNote("Clicking the backdrop does not close this", false);
+    setNote("", false);
     el.formBackdrop.classList.add("open");
     autoGrowCmd();
     el.fCmd.focus();
@@ -806,10 +930,14 @@
   function closeForm(){
     el.formBackdrop.classList.remove("open");
     dlg.dirty = false;
+    editorRows = []; el.fEnv.value = "[]"; editorElement("envList").replaceChildren();
+    editorElement("passwordInput").value="";editorElement("usernameInput").value="";originalIdentity=null;
+    if (dlg.returnFocus && dlg.returnFocus.isConnected) dlg.returnFocus.focus();
   }
   // Every close path funnels through here: if the fields were edited, confirm once
   // before discarding (an accidental Esc or ✕ should not silently drop typed input).
   function requestClose(){
+    if (el.dlgSave.disabled) return;
     if (!dlg.dirty){ closeForm(); return; }
     askConfirm("Discard changes", "This will close <b>without saving</b> your changes.", "Discard", function(){
       closeForm();
@@ -819,7 +947,7 @@
     el.formDlg.classList.remove("nudge");
     void el.formDlg.offsetWidth;
     el.formDlg.classList.add("nudge");
-    setNote("Clicking the backdrop does not close this dialog — use ✕ / Cancel / Esc", true);
+
   }
 
   function askConfirm(title, bodyHtml, yesLabel, onYes){
@@ -828,10 +956,12 @@
     el.confirmYes.textContent = yesLabel;
     confirmAction = onYes;
     el.confirmBackdrop.classList.add("open");
+    el.confirmNo.focus();
   }
   function closeConfirm(){
     el.confirmBackdrop.classList.remove("open");
     confirmAction = null;
+    if (el.formBackdrop.classList.contains("open")) el.dlgCancel.focus();
   }
 
   // `persisted` is only ever seen on a register or an update response — the
@@ -851,20 +981,26 @@
   function saveForm(alsoRun){
     var cmd = el.fCmd.value.trim();
     if (!cmd){ setNote("Enter a command.", true); el.fCmd.focus(); return; }
+    var runAsInput;
+    try{runAsInput=executionInput();}catch(error){setNote(error.message,true);return;}
+    var parsedEnv;
+    try { parsedEnv = parseEnv(el.fEnv.value); }
+    catch (error) { setNote(error.message, true); setEditorEnvironmentOpen(true); return; }
     var payload = {
       label: el.fLabel.value.trim() || undefined,
       cmd: cmd,
       cwd: el.fCwd.value.trim() || undefined,
-      env: parseEnv(el.fEnv.value),
+      env: parsedEnv,
       auto_start: el.fAutoStart.checked,
+      run_as:runAsInput,
     };
-    el.dlgSave.disabled = true;
-    el.dlgSaveRun.disabled = true;
+    setEditorBusy(true);
     var request;
     if (dlg.mode === "edit"){
       request = api("/processes/" + dlg.editingId, { method: "PUT", body: payload })
         .then(function(putData){
           if (!alsoRun) return putData;
+          if(putData.persisted===false){notePersistence(putData);throw new Error("Save failed; command was not restarted.");}
           return api("/processes/" + dlg.editingId + "/restart", { method: "POST" }).then(function(data){
             // Restart has no persistence result. Keep the preceding save's
             // result so a failed auto-start setting write is not shown as saved.
@@ -887,6 +1023,7 @@
         registerPayload = {
           label: payload.label, cmd: payload.cmd, cwd: payload.cwd, env: payload.env,
           auto_start: payload.auto_start,
+          run_as:payload.run_as,
           start: false,
         };
       }
@@ -901,9 +1038,149 @@
       });
     }
     request.catch(function(e){ setNote(e.message, true); })
-      .then(function(){ el.dlgSave.disabled = false; el.dlgSaveRun.disabled = false; });
+      .then(function(){ setEditorBusy(false); });
   }
 
+  // Command editor UI. Existing HTTP save/run/restart and log code stay in place.
+  var editorRows = [];
+  function editorElement(id){ return document.getElementById(id); }
+  function setEditorEnvironmentOpen(open){
+    editorElement("envPanel").hidden = !open;
+    editorElement("envTrigger").setAttribute("aria-expanded", String(open));
+  }
+  function countEditorRows(){
+    editorElement("envCount").textContent = String(editorRows.filter(function(row){
+      return row[0].trim() || row[1];
+    }).length);
+  }
+  function updateEditorEnvironment(){
+    el.fEnv.value = JSON.stringify(editorRows);
+    countEditorRows();
+    el.fEnv.dispatchEvent(new Event("input", {bubbles:true}));
+  }
+  function renderEditorRows(){
+    var list = editorElement("envList");
+    list.replaceChildren();
+    editorRows.forEach(function(row, index){
+      var item = document.createElement("div"); item.className = "sp-env-entry";
+      var key = document.createElement("input");
+      key.value = row[0]; key.placeholder = "NAME"; key.spellcheck = false; key.autocomplete = "off";
+      key.setAttribute("aria-label", "Variable name " + (index + 1));
+      var value = document.createElement("input");
+      value.value = row[1]; value.placeholder = "Value"; value.spellcheck = false; value.autocomplete = "off";
+      value.setAttribute("aria-label", "Variable value " + (index + 1));
+      key.addEventListener("input", function(){ row[0] = key.value; updateEditorEnvironment(); });
+      value.addEventListener("input", function(){ row[1] = value.value; updateEditorEnvironment(); });
+      var remove = document.createElement("button");
+      remove.type = "button"; remove.className = "sp-env-remove"; remove.title = "Remove variable";
+      remove.setAttribute("aria-label", "Remove variable " + (index + 1));
+      remove.innerHTML = '<svg class="sp-ico" aria-hidden="true"><use href="#sp-x"/></svg>';
+      remove.addEventListener("click", function(){
+        editorRows.splice(index, 1); updateEditorEnvironment(); renderEditorRows();
+        var next = list.children[Math.min(index, list.children.length - 1)];
+        (next ? next.querySelector("input") : editorElement("addEnv")).focus();
+      });
+      item.append(key, value, remove); list.append(item);
+    });
+    countEditorRows();
+  }
+  function syncEditor(process){
+    editorRows = JSON.parse(el.fEnv.value || "[]");
+    setEditorEnvironmentOpen(false); renderEditorRows();
+    editorElement("editorMeta").textContent = dlg.mode === "edit" ? "CHANGES APPLY ON NEXT RUN" : "";
+    syncIdentity(process);
+  }
+  function setEditorBusy(busy){
+    el.formDlg.setAttribute("aria-busy", String(busy));
+    el.formDlg.querySelectorAll("input, textarea, button").forEach(function(input){
+      input.disabled = busy || (input.id === "runSpecific" && !runtimeInfo.run_as_supported);
+    });
+  }
+  editorElement("envTrigger").addEventListener("click", function(){
+    setEditorEnvironmentOpen(editorElement("envPanel").hidden);
+  });
+  editorElement("addEnv").addEventListener("click", function(){
+    editorRows.push(["", ""]); updateEditorEnvironment(); renderEditorRows();
+    setEditorEnvironmentOpen(true);
+    editorElement("envList").lastElementChild.querySelector("input").focus();
+  });
+  // Keep keyboard focus inside the active editor or discard confirmation.
+  document.addEventListener("keydown", function(event){
+    if (event.key !== "Tab") return;
+    var container = el.confirmBackdrop.classList.contains("open") ? el.confirmDlg :
+      (el.formBackdrop.classList.contains("open") ? el.formDlg : null);
+    if (!container) return;
+    var focusable = Array.from(container.querySelectorAll("button,input,textarea,select,a[href],[tabindex]"))
+      .filter(function(node){ return !node.disabled && node.tabIndex >= 0 && node.getClientRects().length > 0; });
+    if (!focusable.length){ event.preventDefault(); return; }
+    var first = focusable[0], last = focusable[focusable.length - 1], active = document.activeElement;
+    if (event.shiftKey && (active === first || !container.contains(active))){ event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && (active === last || !container.contains(active))){ event.preventDefault(); first.focus(); }
+  });
+
+
+  var runtimeInfo = {os:"", run_as_supported:false, run_as_reason:"Checking execution capabilities"};
+  var executionMode = "service", originalIdentity = null;
+  function identityName(identity){
+    if (!identity) return "";
+    return identity.domain ? identity.domain + "\\" + identity.username : identity.username;
+  }
+  function sameAccount(a,b){
+    if (runtimeInfo.os === "windows") {
+      function canonical(v){ v=v.trim().toLowerCase(); return v.indexOf("\\")<0 && v.indexOf("@")<0 ? ".\\"+v : v; }
+      return canonical(a) === canonical(b);
+    }
+    return a.trim() === b.trim();
+  }
+  function syncIdentity(process){
+    originalIdentity = process && process.run_as || null;
+    executionMode = originalIdentity ? "user" : "service";
+    editorElement("usernameInput").value=identityName(originalIdentity);
+    editorElement("passwordInput").value="";
+    editorElement("passwordInput").type="password";
+    editorElement("passwordReveal").setAttribute("aria-label","Show password");
+    updateIdentity();
+  }
+  function updateIdentity(){
+    var specific=executionMode === "user";
+    editorElement("runService").classList.toggle("active",!specific);
+    editorElement("runSpecific").classList.toggle("active",specific);
+    editorElement("runService").setAttribute("aria-pressed",String(!specific));
+    editorElement("runSpecific").setAttribute("aria-pressed",String(specific));
+    editorElement("runSpecific").disabled=!runtimeInfo.run_as_supported;
+    editorElement("runSpecific").title=runtimeInfo.run_as_reason || "Execute as a specified OS account";
+    editorElement("runService").title=runtimeInfo.service_account || "Use the account running SpawnPoint";
+    editorElement("identityFields").hidden=!specific;
+    editorElement("usernameInput").placeholder=runtimeInfo.os === "windows" ? ".\\runner-user" : "runner-user";
+    editorElement("userHint").textContent=runtimeInfo.os === "windows" ? "LOCAL\\user · DOMAIN\\user" : "Linux account";
+    var keep=originalIdentity && sameAccount(editorElement("usernameInput").value,identityName(originalIdentity));
+    editorElement("passwordInput").placeholder=keep?"Leave blank to keep existing":"Enter password";
+    editorElement("passwordHint").textContent=keep?"Existing credential is not displayed":"Required for a specified user";
+  }
+  function executionInput(){
+    if(executionMode === "service") return originalIdentity ? {mode:"service"} : undefined;
+    if(!runtimeInfo.run_as_supported) throw new Error(runtimeInfo.run_as_reason || "Account execution is unavailable");
+    var name=editorElement("usernameInput").value.trim(), password=editorElement("passwordInput").value;
+    if(!name) throw new Error("Enter a username.");
+    if(!password && !(originalIdentity && sameAccount(name,identityName(originalIdentity)))) throw new Error("Enter a password for this account.");
+    var input={mode:"user",username:name};if(password)input.password=password;return input;
+  }
+  function loadRuntime(){
+    return api("/runtime").then(function(data){runtimeInfo=data;updateIdentity();}).catch(function(error){
+      runtimeInfo.run_as_supported=false;runtimeInfo.run_as_reason="Execution capabilities could not be loaded";
+      if(error.status===401)markUnauthorised();updateIdentity();
+    });
+  }
+  editorElement("runService").addEventListener("click",function(){executionMode="service";dlg.dirty=true;updateIdentity();});
+  editorElement("runSpecific").addEventListener("click",function(){if(!runtimeInfo.run_as_supported)return;executionMode="user";dlg.dirty=true;updateIdentity();editorElement("usernameInput").focus();});
+  ["usernameInput","passwordInput"].forEach(function(id){editorElement(id).addEventListener("input",function(){dlg.dirty=true;setNote("",false);updateIdentity();});});
+  editorElement("passwordReveal").addEventListener("click",function(){var input=editorElement("passwordInput"),show=input.type==="password";input.type=show?"text":"password";this.setAttribute("aria-label",show?"Hide password":"Show password");});
+  el.connStatus.addEventListener("click",function(){
+    if(!state.authRequired)return;
+    var token=window.prompt("SpawnPoint API token");if(!token)return;
+    apiToken=token;state.authRequired=false;loadRuntime();refreshLoop();
+  });
+  loadRuntime();
   /* ── wiring ── */
   el.newBtn.addEventListener("click", function(){ openForm("new", null); });
 
@@ -976,12 +1253,12 @@
   [el.fLabel, el.fCmd, el.fCwd, el.fEnv].forEach(function(input){
     input.addEventListener("input", function(){
       dlg.dirty = true;
-      setNote("Clicking the backdrop does not close this", false);
+      setNote("", false);
     });
   });
   el.fAutoStart.addEventListener("change", function(){
     dlg.dirty = true;
-    setNote("Clicking the backdrop does not close this", false);
+    setNote("", false);
   });
 
   el.dlgClose.addEventListener("click", requestClose);

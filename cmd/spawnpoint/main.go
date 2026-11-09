@@ -27,6 +27,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"spawnpoint/internal/runas"
 	"sync"
 	"time"
 
@@ -44,6 +45,9 @@ import (
 )
 
 func main() {
+	if runas.HandleChild() {
+		return
+	}
 	os.Exit(run())
 }
 
@@ -70,6 +74,7 @@ func run() int {
 	// It reads the registry through db, which is only open from the
 	// OpenDatabase stage onwards — the restore stage that uses it runs after.
 	procs := runner.New(cfg.LogDir, log, db, cfg.KillChildrenOnExit)
+	procs.SetCredentialDirectory(cfg.DBPath + ".credentials")
 	instances := issuer.New(db, log)
 	api := httpapi.New(httpapi.Options{
 		Config: cfg,

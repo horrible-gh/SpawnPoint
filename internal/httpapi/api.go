@@ -155,6 +155,7 @@ const (
 	routeIndex
 	routeHealth
 	routeHelp
+	routeRuntime
 	routeSpawn
 	routeProcesses
 	routeProcessItem
@@ -188,6 +189,8 @@ func (s *Server) resolve(path string) route {
 			return route{}
 		}
 		return route{kind: routeIndex, methods: []string{http.MethodGet, http.MethodHead}}
+	case "/runtime":
+		return route{kind: routeRuntime, methods: []string{http.MethodGet, http.MethodHead}}
 	case "/healthz":
 		return route{kind: routeHealth, methods: []string{http.MethodGet, http.MethodHead}}
 	case "/help":
@@ -307,7 +310,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if (r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodDelete) && !sameOrigin(r) {
+		s.identityRefuse(w, r, "Cross-origin requests are not allowed.")
+		return
+	}
 	switch rt.kind {
+	case routeRuntime:
+		s.serveRuntime(w, r)
 	case routeIndex:
 		s.serveIndex(w, r)
 	case routeHealth:

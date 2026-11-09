@@ -36,6 +36,7 @@ type RunnerEntry struct {
 	Cwd       *string
 	Env       map[string]string
 	AutoStart bool
+	RunAsJSON string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

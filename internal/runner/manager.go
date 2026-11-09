@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"spawnpoint/internal/runas"
 	"sync"
 	"time"
 
@@ -50,10 +51,11 @@ type Registry interface {
 // the server so that no exit path — including the ones that run no code —
 // leaves a child behind.
 type Manager struct {
-	logDir     string
-	log        *opslog.Logger
-	registry   Registry
-	killOnExit bool
+	logDir        string
+	log           *opslog.Logger
+	registry      Registry
+	killOnExit    bool
+	credentialDir string
 	// decoder reads child log bytes back as text. It is a field rather than a
 	// package call so the log contract tests can pin the candidate order of the
 	// machine 0007-P was written against (0008-L 2.7).
@@ -127,29 +129,23 @@ func (m *Manager) RegisterOnly(label, cmd string, cwd *string, env map[string]st
 // register is shared by Register and RegisterOnly; start decides whether the
 // freshly saved entry is spawned.
 func (m *Manager) register(label, cmd string, cwd *string, env map[string]string, start bool, autoStart ...bool) (Info, bool) {
+	return m.registerConfigured(label, cmd, cwd, env, start, nil, autoStart...)
+}
+
+func (m *Manager) registerConfigured(label, cmd string, cwd *string, env map[string]string, start bool, identity *runas.Spec, autoStart ...bool) (Info, bool) {
 	now := time.Now()
-	e := &entry{
-		id:        m.newID(),
-		label:     label,
-		cmd:       cmd,
-		cwd:       normaliseCwd(cwd),
-		env:       copyEnv(env),
-		createdAt: now,
-		updatedAt: now,
-		status:    StatusStopped,
-	}
+	e := &entry{id: m.newID(), label: label, cmd: cmd, cwd: normaliseCwd(cwd), env: copyEnv(env), runAs: runas.Clone(identity), createdAt: now, updatedAt: now, status: StatusStopped}
 	if len(autoStart) > 0 {
 		e.autoStart = autoStart[0]
 	}
-
 	m.mu.Lock()
 	m.entries[e.id] = e
 	m.mu.Unlock()
-
 	persisted := m.persist(e)
-
 	e.mu.Lock()
-	if start {
+	if identity != nil && !persisted {
+		e.markFailed("Execution identity was not saved; command was not started.", time.Now())
+	} else if start {
 		m.spawn(e, "")
 	}
 	info := e.infoLocked()
@@ -265,7 +261,12 @@ func (m *Manager) Restore() (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, row := range rows {
+		identity, err := runas.Parse(row.RunAsJSON)
+		if err != nil {
+			return 0, fmt.Errorf("restore execution identity for %s: %w", row.ID, err)
+		}
 		e := &entry{
+			runAs:     identity,
 			id:        row.ID,
 			label:     row.Label,
 			cmd:       row.Cmd,
@@ -291,6 +292,7 @@ func (m *Manager) persist(e *entry) bool {
 	row := store.RunnerEntry{
 		ID: e.id, Label: e.label, Cmd: e.cmd, Cwd: e.cwd, Env: copyEnv(e.env),
 		AutoStart: e.autoStart,
+		RunAsJSON: e.runAs.JSON(),
 		CreatedAt: e.createdAt, UpdatedAt: e.updatedAt,
 	}
 	e.mu.Unlock()
@@ -488,6 +490,10 @@ func (m *Manager) CloseServerJob() {
 // and omitted for the initial registration, which has nothing to resume from
 // (0008-L 2.2).
 func (m *Manager) spawn(e *entry, marker string) {
+	if e.runAs != nil {
+		m.spawnAs(e, marker)
+		return
+	}
 	logPath := m.LogPath(e.id)
 	if marker != "" {
 		if err := writeMarker(logPath, marker, time.Now()); err != nil {
@@ -669,7 +675,10 @@ func (m *Manager) watch(e *entry, gen int, cmd *exec.Cmd, exited chan struct{}) 
 	if cmd.ProcessState != nil {
 		code = cmd.ProcessState.ExitCode()
 	}
+	m.finishRun(e, gen, code)
+}
 
+func (m *Manager) finishRun(e *entry, gen, code int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.gen != gen {

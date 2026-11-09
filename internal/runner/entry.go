@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"spawnpoint/internal/runas"
 	"sync"
 	"time"
 
@@ -34,6 +35,7 @@ type Info struct {
 	Cwd       *string
 	Env       map[string]string
 	AutoStart bool
+	RunAs     *runas.Summary
 
 	Status   string
 	PID      *int
@@ -75,6 +77,7 @@ type entry struct {
 	cwd       *string
 	env       map[string]string
 	autoStart bool
+	runAs     *runas.Spec
 	createdAt time.Time
 	updatedAt time.Time
 
@@ -123,6 +126,7 @@ func (e *entry) infoLocked() Info {
 		Label:     e.label,
 		Cmd:       e.cmd,
 		AutoStart: e.autoStart,
+		RunAs:     e.runAs.Summary(),
 		Status:    e.status,
 		Error:     e.errText,
 		CreatedAt: e.createdAt,

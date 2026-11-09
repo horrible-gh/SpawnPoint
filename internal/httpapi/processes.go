@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"spawnpoint/internal/runas"
 	"strings"
 	"unicode/utf8"
 
@@ -28,7 +29,8 @@ type processJSON struct {
 	Env   map[string]string `json:"env"`
 	// Omitted when false to preserve existing response bodies. An absent
 	// auto_start always means false; enabled registrations explicitly send true.
-	AutoStart bool `json:"auto_start,omitempty"`
+	AutoStart bool           `json:"auto_start,omitempty"`
+	RunAs     *runas.Summary `json:"run_as,omitempty"`
 	// PID is the shell's process, not the program the user named: the program
 	// is that shell's descendant (0004-NR 3.3). Kept as-is from the current
 	// contract.
@@ -84,6 +86,7 @@ func toJSON(info runner.Info) processJSON {
 		Cwd:       info.Cwd,
 		Env:       env,
 		AutoStart: info.AutoStart,
+		RunAs:     info.RunAs,
 		PID:       info.PID,
 		Status:    info.Status,
 		ExitCode:  info.ExitCode,
@@ -121,6 +124,7 @@ type registration struct {
 	env   map[string]string
 	// nil means omitted: creation defaults to off, updates preserve the value.
 	autoStart []bool
+	runAs     *runas.Input
 }
 
 // validateRegistration preserves the existing cmd, label, cwd, env validation
@@ -185,6 +189,11 @@ func validateRegistration(obj map[string]json.RawMessage) (registration, *apiErr
 		}
 		out.autoStart = []bool{value}
 	}
+	var identityError *apiError
+	out.runAs, identityError = parseRunAs(obj["run_as"])
+	if identityError != nil {
+		return out, identityError
+	}
 	return out, nil
 }
 
@@ -233,7 +242,22 @@ func (s *Server) serveRegister(w http.ResponseWriter, r *http.Request) {
 		info      runner.Info
 		persisted bool
 	)
-	if start {
+	if reg.runAs != nil {
+		if reg.runAs.Mode == "user" && !s.identityGuard(w, r, true) {
+			return
+		}
+		impl, ok := s.runner.(identityRunner)
+		if !ok {
+			s.fail(w, r, invalidField("run_as", "Execution identity is unavailable."))
+			return
+		}
+		var err error
+		info, persisted, err = impl.RegisterIdentity(reg.label, reg.cmd, reg.cwd, reg.env, *reg.runAs, start, reg.autoStart...)
+		if err != nil {
+			s.fail(w, r, invalidField("run_as", err.Error()))
+			return
+		}
+	} else if start {
 		info, persisted = s.runner.Register(reg.label, reg.cmd, reg.cwd, reg.env, reg.autoStart...)
 	} else {
 		info, persisted = s.runner.RegisterOnly(reg.label, reg.cmd, reg.cwd, reg.env, reg.autoStart...)
@@ -282,7 +306,27 @@ func (s *Server) serveUpdate(w http.ResponseWriter, r *http.Request, id string) 
 	// PUT replaces the existing command fields. auto_start is an additive
 	// option: omission preserves it for clients written before it existed.
 	cwd := reg.cwd
-	info, persisted, ok := s.runner.Update(id, &reg.label, &reg.cmd, &cwd, reg.env, reg.autoStart...)
+	current, _ := s.runner.Get(id)
+	var info runner.Info
+	var persisted, ok bool
+	if reg.runAs != nil || current.RunAs != nil {
+		if (current.RunAs != nil || (reg.runAs != nil && reg.runAs.Mode == "user")) && !s.identityGuard(w, r, true) {
+			return
+		}
+		impl, supported := s.runner.(identityRunner)
+		if !supported {
+			s.fail(w, r, invalidField("run_as", "Execution identity is unavailable."))
+			return
+		}
+		var err error
+		info, persisted, ok, err = impl.UpdateIdentity(id, &reg.label, &reg.cmd, &cwd, reg.env, reg.runAs, reg.autoStart...)
+		if err != nil {
+			s.fail(w, r, invalidField("run_as", err.Error()))
+			return
+		}
+	} else {
+		info, persisted, ok = s.runner.Update(id, &reg.label, &reg.cmd, &cwd, reg.env, reg.autoStart...)
+	}
 	if !ok {
 		s.fail(w, r, notFoundError(msgProcessNotFound))
 		return
@@ -299,6 +343,9 @@ func (s *Server) serveUpdate(w http.ResponseWriter, r *http.Request, id string) 
 // E-17). A double click is not a fault, and reporting it as one would train
 // people to ignore the error banner.
 func (s *Server) serveAction(w http.ResponseWriter, r *http.Request, id, action string) {
+	if !s.guardExistingIdentity(w, r, id, false) {
+		return
+	}
 	if s.runner == nil {
 		s.fail(w, r, notFoundError(msgProcessNotFound))
 		return
@@ -346,6 +393,9 @@ func (s *Server) serveProcessGet(w http.ResponseWriter, r *http.Request, id stri
 // for something that has been deleted (0007-P [삭제]). HTTP 200 reports the
 // current deletion; `persisted` reports whether it survives a restart.
 func (s *Server) serveDelete(w http.ResponseWriter, r *http.Request, id string) {
+	if !s.guardExistingIdentity(w, r, id, false) {
+		return
+	}
 	if s.runner == nil {
 		s.fail(w, r, notFoundError(msgProcessNotFound))
 		return

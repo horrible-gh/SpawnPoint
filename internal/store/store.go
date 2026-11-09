@@ -306,7 +306,7 @@ func (s *Store) SaveEntry(e RunnerEntry) error {
 	// created_at and updated_at are given the same value; the upsert keeps the
 	// original created_at and takes only the new updated_at, so an update does
 	// not disturb the ordering restore relies on (0008-L 6.5).
-	_, err = s.db.Exec(query, e.ID, e.Label, e.Cmd, nullString(e.Cwd), env, ts, ts, e.AutoStart)
+	_, err = s.db.Exec(query, e.ID, e.Label, e.Cmd, nullString(e.Cwd), env, ts, ts, e.AutoStart, e.RunAsJSON)
 	if err != nil {
 		class, note := s.adapter.Interpret(err)
 		return &dialect.WriteError{Class: class, Note: note, Err: err}
@@ -348,7 +348,7 @@ func (s *Store) ListEntries() ([]RunnerEntry, error) {
 			cwd, env             sql.NullString
 			createdAt, updatedAt timestamp
 		)
-		if err := rows.Scan(&e.ID, &e.Label, &e.Cmd, &cwd, &env, &createdAt, &updatedAt, &e.AutoStart); err != nil {
+		if err := rows.Scan(&e.ID, &e.Label, &e.Cmd, &cwd, &env, &createdAt, &updatedAt, &e.AutoStart, &e.RunAsJSON); err != nil {
 			return nil, fmt.Errorf("list runner entries: %w", err)
 		}
 		e.Cwd = fromNull(cwd)

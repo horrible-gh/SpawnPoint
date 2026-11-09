@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>SpawnPoint · Command Editor UI Concept</title>
+<style>
+  :root {
+    --base:#0d1015; --surface:#141920; --surface2:#192029; --surface3:#202934;
+    --edge:#2a3440; --edge-strong:#3b4a5a; --text:#e6edf5; --secondary:#abb7c6;
+    --muted:#7b8999; --accent:#82b6f5; --accent-dark:#243c57; --green:#6bd7a2;
+    --orange:#edbc81; --red:#ec8f8c; --mono:"Cascadia Code","JetBrains Mono",Consolas,Monaco,monospace;
+    --sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",Arial,sans-serif;
+    --shadow:0 32px 90px rgba(0,0,0,.64), 0 2px 10px rgba(0,0,0,.3);
+  }
+  *,*::before,*::after {box-sizing:border-box}
+  html,body {margin:0;min-height:100%;width:100%}
+  body {background:var(--base);color:var(--text);font:13px/1.5 var(--sans);overflow:hidden}
+  button,input,textarea {font:inherit}
+  button {cursor:pointer}
+  button:focus-visible,input:focus-visible,textarea:focus-visible {outline:2px solid var(--accent);outline-offset:2px}
+  .ico {width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+  .app-shell {height:100vh;display:flex;flex-direction:column;min-height:0}
+  .app-header {height:66px;flex-shrink:0;display:flex;align-items:center;gap:18px;padding:0 28px;background:#131820;border-bottom:1px solid var(--edge)}
+  .brandmark {width:32px;height:32px;border:1px solid #456580;border-radius:8px;display:grid;place-items:center;color:var(--accent);background:#1b2a39}
+  .brand {font-size:16px;font-weight:780;letter-spacing:-.5px;white-space:nowrap}
+  .brand strong {color:var(--accent)}
+  .brand small {display:block;margin-top:-2px;color:#78899c;letter-spacing:1.5px;font:9px var(--mono)}
+  .global-status {display:flex;align-items:center;gap:7px;color:#8e9dad;font:11px var(--mono);margin-left:12px}
+  .online {width:7px;height:7px;background:var(--green);border-radius:50%;box-shadow:0 0 0 3px #204133}
+  .spacer {flex:1}
+  .app-aux {font:10px var(--mono);letter-spacing:1px;color:#8c9baf;padding:7px 11px;border:1px solid var(--edge);border-radius:6px}
+  .new-command {border:1px solid #6395c9;background:#315579;color:#e2effd;border-radius:7px;padding:9px 13px;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700}
+  .workspace {display:flex;flex-direction:column;min-height:0;flex:1}
+  .table-section {flex:1 1 56%;min-height:210px;overflow:auto}
+  .sectionbar {height:53px;display:flex;align-items:center;gap:13px;padding:0 29px;border-bottom:1px solid var(--edge)}
+  .sectionbar h3 {font-size:13px;letter-spacing:.2px;margin:0;font-weight:750}
+  .subtle-count {color:var(--muted);font:11px var(--mono)}
+  .search-visual {width:210px;border:1px solid #2b3440;border-radius:6px;padding:7px 10px;color:#6e7d8e;display:flex;gap:8px;align-items:center;font-size:12px;background:#11161b}
+  .process-table {width:100%;border-collapse:collapse;text-align:left;table-layout:fixed}
+  .process-table th {height:37px;text-transform:uppercase;font:10px var(--mono);letter-spacing:1px;color:#7d8b9b;background:#151a21;border-bottom:1px solid var(--edge);padding:0 25px}
+  .process-table td {height:70px;border-bottom:1px solid #242d37;padding:9px 25px;color:#9faebf;font:12px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .process-table tr.selected {background:#172637;box-shadow:inset 3px 0 #83b9ef}
+  .process-table td:first-child {font-family:var(--sans)}
+  .process-name {color:#dee6f1;font-weight:700;font-size:13px;display:block;margin-bottom:3px}
+  .process-command {display:block;font:10.5px var(--mono);color:#718195;overflow:hidden;text-overflow:ellipsis}
+  .state {font:10px var(--mono);padding:5px 9px;display:inline-flex;align-items:center;gap:7px;border-radius:5px;background:#1d3630;color:#8de0ad}
+  .state::before {content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+  .state.stopped {background:#262c35;color:#9caab9}
+  .state.failed {background:#3b2629;color:#f1a5a7}
+  .action-btn {width:27px;height:27px;background:#202833;color:#8495a8;border:1px solid #36414f;border-radius:6px;margin-right:4px;display:inline-grid;place-items:center;vertical-align:middle}
+  .action-btn .ico {width:14px;height:14px}
+  .action-btn:hover {color:var(--accent)}
+  .log-section {flex:1 1 44%;min-height:145px;border-top:1px solid #2e3844;background:#0c1015;overflow:hidden;display:flex;flex-direction:column}
+  .log-header {height:46px;border-bottom:1px solid var(--edge);padding:0 29px;display:flex;gap:9px;align-items:center;background:#12171e}
+  .log-header b {font-size:12px}
+  .log-header span {color:#94b8da;font:11px var(--mono)}
+  .log-header small {font:10px var(--mono);color:#8290a1}
+  .log-content {overflow:hidden;flex:1;padding:20px 29px;font:11px/2 var(--mono);color:#7f9eac;white-space:pre-wrap}
+  .log-content .t {color:#778b98}.log-content .success {color:#79c69c}.log-content .warm {color:#d6ac78}
+  .app-foot {flex-shrink:0;height:31px;border-top:1px solid #25313b;background:#12171e;display:flex;align-items:center;gap:20px;padding:0 29px;color:#718297;font:10px var(--mono)}
+
+  /* Prototype switcher: this is not part of the proposed application UI. */
+  .proto-controls {position:fixed;top:18px;right:23px;z-index:90;display:flex;align-items:center;gap:12px;padding:8px 10px 8px 14px;background:#202a36;border:1px solid #4a5c71;border-radius:10px;box-shadow:0 12px 28px #0006}
+  .proto-label {font:10px var(--mono);letter-spacing:1.6px;color:#b3c4d6}
+  .proto-divider {height:18px;width:1px;background:#445469}
+  .mini-group {display:flex;gap:3px;padding:3px;border-radius:7px;background:#101823}
+  .mini-group button {background:transparent;color:#9eafc2;border:0;border-radius:5px;padding:6px 10px;font-size:11px;font-weight:700;white-space:nowrap}
+  .mini-group button.active {background:#46607d;color:#f3f7fd;box-shadow:0 1px 4px #0004}
+  .mini-group button:hover:not(.active) {color:#e8eff8}
+
+  .veil {position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(4,7,11,.69);backdrop-filter:blur(2.5px)}
+  .veil.hidden {display:none}
+  .dialog {width:min(770px,100%);max-height:min(90vh,835px);display:flex;flex-direction:column;background:var(--surface);border:1px solid #414e5e;border-radius:13px;box-shadow:var(--shadow);overflow:hidden;min-height:0}
+  .dialog-header {display:flex;align-items:center;gap:13px;flex-shrink:0;padding:20px 25px 18px;border-bottom:1px solid var(--edge)}
+  .dialog-icon {width:35px;height:35px;display:grid;place-items:center;border:1px solid #35516d;background:#1f3449;border-radius:9px;color:#8ebef0}
+  .dialog-icon .ico {width:18px;height:18px}
+  .dialog-header h1 {font-size:19px;font-weight:750;letter-spacing:-.45px;line-height:1.25;margin:0}
+  .dialog-header .kind {font:10px var(--mono);color:#7d94aa;letter-spacing:.8px;margin-top:4px}
+  .close-btn {display:grid;place-items:center;width:31px;height:31px;flex-shrink:0;border:1px solid #354251;background:#222a35;color:#a1b0c2;border-radius:7px}
+  .close-btn:hover {color:var(--text);background:#293544}
+  .dialog-body {padding:22px 25px 19px;overflow-y:auto;min-height:0;scrollbar-color:#384758 transparent;scrollbar-width:thin}
+  .field-group {display:grid;grid-template-columns:1fr 1.42fr;gap:13px;margin-bottom:15px}
+  .field {min-width:0}
+  .field label,.field .field-label {display:flex;align-items:center;gap:8px;font-weight:700;color:#b8c5d4;font-size:12px;margin:0 0 7px}
+  .required {color:var(--accent);font-size:13px}
+  .field input,.field textarea {color:#e8f0f9;width:100%;background:#0f151c;border:1px solid #354353;border-radius:7px;padding:10px 12px;transition:border-color .12s;font:12px/1.55 var(--mono);outline:0}
+  .field input::placeholder,.field textarea::placeholder {color:#687b8e}
+  .field input:focus,.field textarea:focus {border-color:#88b5ec;box-shadow:0 0 0 3px rgba(114,165,229,.12)}
+  .field textarea {display:block;resize:vertical;min-height:77px;max-height:175px;line-height:1.6}
+  .field input {height:42px}
+  .cmd-field {margin-bottom:18px}
+  .section-separator {height:1px;background:#2b3541;margin:18px 0}
+  .section-title {font:10px var(--mono);font-weight:700;letter-spacing:1.5px;color:#8d9db0;margin:0 0 14px}
+  .exec-row {display:flex;align-items:flex-start;justify-content:space-between;gap:15px}
+  .run-as {flex:1;min-width:0}
+  .seg {display:flex;align-items:center;gap:2px;background:#0e141b;border:1px solid #34404d;padding:3px;border-radius:8px;width:fit-content;max-width:100%}
+  .seg button {min-width:152px;display:flex;align-items:center;justify-content:center;gap:8px;color:#91a3b7;background:transparent;border:1px solid transparent;border-radius:5px;padding:8px 12px;font-size:12px;font-weight:650;white-space:nowrap}
+  .seg button.active {border-color:#405e7f;background:#24394d;color:#deecfc;box-shadow:0 2px 6px #0005}
+  .seg button .ico {width:14px;height:14px}
+  .seg button:hover:not(.active) {background:#1b2733;color:#d2e3f5}
+  .auto-option {min-width:132px;text-align:right;margin-top:0}
+  .auto-option label {display:flex;justify-content:flex-end;align-items:center;gap:11px;color:#c5d0dc;font-size:12px;font-weight:650;cursor:pointer}
+  .auto-option small {display:block;font:10px var(--sans);color:#8291a3;margin-top:5px}
+  .switch {position:relative;display:inline-flex;width:33px;height:19px;border-radius:40px;background:#3b4856;vertical-align:middle;transition:background .16s}
+  .switch::after {position:absolute;top:3px;left:3px;content:"";width:13px;height:13px;border-radius:50%;background:#d0d9e5;transition:transform .16s}
+  .auto-option input {position:absolute;width:1px;height:1px;opacity:0}
+  .auto-option input:checked + .switch {background:#397e66}
+  .auto-option input:checked + .switch::after {transform:translateX(14px);background:#f4fff9}
+  .auto-option input:focus-visible + .switch {outline:2px solid var(--accent);outline-offset:3px}
+  .identity-fields {display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:15px;animation:slide .16s ease}
+  .identity-fields.hidden {display:none}
+  @keyframes slide {from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+  .password-wrap {position:relative}
+  .password-wrap input {padding-right:44px}
+  .reveal {position:absolute;right:5px;top:5px;width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:5px;color:#8d9eae;background:transparent}
+  .reveal:hover {background:#263340;color:#d3e4f8}
+  .input-note {font:10.5px var(--sans);color:#7b8fa4;min-height:0;margin-top:6px}
+  .env-trigger {width:100%;background:#161e27;border:1px solid #2d3a48;border-radius:8px;display:flex;align-items:center;gap:11px;padding:12px 14px;text-align:left;color:#bfcbda}
+  .env-trigger:hover {background:#1c2631;border-color:#40546a}
+  .env-trigger strong {font-size:12px;font-weight:700;color:#d0dbe7}
+  .env-count {font:10px var(--mono);color:#8296a9;padding:2px 6px;background:#26313c;border-radius:4px}
+  .env-trigger .chevron {margin-left:auto;transition:transform .15s}
+  .env-trigger[aria-expanded="true"] .chevron {transform:rotate(180deg)}
+  .env-panel {display:none;padding:14px 0 0}
+  .env-panel.open {display:block}
+  .env-list {display:flex;flex-direction:column;gap:9px}
+  .env-entry {display:grid;grid-template-columns:1fr 1.25fr 30px;gap:9px;align-items:center}
+  .env-entry input {height:38px;width:100%;min-width:0;border:1px solid #374454;border-radius:6px;background:#10161d;color:#e0e9f2;padding:8px 10px;font:12px var(--mono)}
+  .env-entry input:focus {outline:1px solid var(--accent);border-color:var(--accent)}
+  .env-remove {width:30px;height:30px;display:grid;place-items:center;border:0;background:transparent;color:#8898a9;border-radius:5px}
+  .env-remove:hover {background:#34272a;color:#f2aaaa}
+  .env-headers {display:grid;grid-template-columns:1fr 1.25fr 30px;gap:9px;color:#798da2;font:10px var(--mono);margin-bottom:6px}
+  .add-variable {display:inline-flex;gap:6px;align-items:center;background:transparent;border:0;color:#91bdeb;font-size:11px;font-weight:650;padding:8px 0 0}
+  .add-variable:hover {color:#c5e2ff}
+  .add-variable .ico {width:14px;height:14px}
+  .dialog-footer {padding:15px 25px;flex-shrink:0;border-top:1px solid var(--edge);background:#161c24;display:flex;align-items:center;gap:9px}
+  .foot-meta {font:10px var(--mono);color:#7c8ea0;letter-spacing:.1px}
+  .foot-meta .keycap {border:1px solid #475361;border-radius:3px;padding:1px 4px;margin-right:4px;color:#9cadbd}
+  .btn {display:inline-flex;align-items:center;justify-content:center;gap:9px;height:38px;padding:0 16px;white-space:nowrap;border:1px solid #445262;border-radius:7px;font-size:12px;font-weight:720;color:#c8d4e1;background:#222b36}
+  .btn:hover {background:#2b3745;border-color:#61758b}
+  .btn-plain {background:transparent;border-color:transparent}
+  .btn-save {background:#273c51;border-color:#48617a;color:#dde9f6}
+  .btn-main {background:#7eb7f3;border-color:#8cbffc;color:#0b1b2c;font-weight:780;min-width:150px}
+  .btn-main:hover {background:#9bcbfa;border-color:#acd7fc}
+  .btn .ico {width:14px;height:14px}
+  .toast {position:fixed;z-index:200;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;background:#28394b;border:1px solid #6f91b2;border-radius:8px;color:#e6f0fc;padding:11px 17px;font-size:12px;box-shadow:0 15px 40px #0008;transition:transform .16s,opacity .16s;white-space:nowrap}
+  .toast.on {opacity:1;transform:translateX(-50%) translateY(0)}
+  @media (max-width:860px) {
+    .proto-controls {top:auto;bottom:12px;left:50%;right:auto;transform:translateX(-50%);box-shadow:0 8px 30px #000b}
+    .veil {padding:12px 12px 68px}
+    .dialog {max-height:100%;width:min(740px,100%)}
+    .app-header {padding:0 14px}
+    .app-aux,.global-status {display:none}
+  }
+  @media (max-width:590px) {
+    .veil {padding:0 0 65px;background:rgba(4,7,11,.78)}
+    .dialog {height:100%;max-height:100%;width:100%;border-radius:0;border-left:0;border-right:0}
+    .dialog-header {padding:16px}
+    .dialog-body {padding:18px 16px}
+    .dialog-footer {padding:12px;gap:6px}
+    .field-group,.identity-fields {grid-template-columns:1fr;gap:12px}
+    .exec-row {flex-direction:column;align-items:stretch}
+    .seg {width:100%}
+    .seg button {min-width:0;flex:1;padding:8px 6px}
+    .auto-option {text-align:left}
+    .auto-option label {justify-content:flex-start}
+    .auto-option small {text-align:left}
+    .dialog-footer .foot-meta {display:none}
+    .dialog-footer .spacer {display:none}
+    .btn {padding:0 11px;flex:1;font-size:11px}
+    .btn-main {min-width:0}
+    .proto-controls {gap:6px;padding:7px;bottom:8px;max-width:calc(100vw - 16px)}
+    .proto-label {font-size:8px}
+    .mini-group button {padding:5px 7px;font-size:10px}
+    .process-table td:nth-child(n+3),.process-table th:nth-child(n+3) {display:none}
+    .brand {font-size:14px}
+    .app-foot {display:none}
+  }
+  @media (max-height:670px) and (min-width:591px) {
+    .veil {padding:14px}
+    .dialog {max-height:94vh}
+    .dialog-header {padding:14px 20px}
+    .dialog-body {padding:17px 20px}
+    .dialog-footer {padding:10px 20px}
+  }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-hidden="true" style="position:absolute;overflow:hidden">
+  <symbol id="icon-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m7 9 3 3-3 3M13 16h4"/></symbol>
+  <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></symbol>
+  <symbol id="icon-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="8" rx="2"/><rect x="3" y="13" width="18" height="8" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/></symbol>
+  <symbol id="icon-edit" viewBox="0 0 24 24"><path d="m15 5 4 4M4 20l4.5-1 11-11a2 2 0 0 0-4-4l-11 11z"/></symbol>
+  <symbol id="icon-play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8z"/></symbol>
+  <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-1 5M20 4v7h-7"/></symbol>
+  <symbol id="icon-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+  <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M2 12s4-6.5 10-6.5S22 12 22 12s-4 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="icon-eye-off" viewBox="0 0 24 24"><path d="M3 3 21 21M9 5.9a10.2 10.2 0 0 1 3-.4c6 0 10 6.5 10 6.5a16 16 0 0 1-3.3 3.6M6 8.1C3.5 9.8 2 12 2 12s4 6.5 10 6.5a10 10 0 0 0 3.6-.7"/><path d="M10 10a3 3 0 0 0 4 4"/></symbol>
+  <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="icon-x" viewBox="0 0 24 24"><path d="M6 6 18 18M18 6 6 18"/></symbol>
+  <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 5 5"/></symbol>
+  <symbol id="icon-list" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+</svg>
+
+<!-- Surrounding screen is contextual sample content, not a live SpawnPoint connection. -->
+<div class="app-shell" id="appShell">
+  <header class="app-header">
+    <span class="brandmark"><svg class="ico" style="width:19px;height:19px"><use href="#icon-terminal"/></svg></span>
+    <div class="brand">Spawn<strong>Point</strong><small>PROCESS RUNNER</small></div>
+    <span class="global-status"><span class="online"></span>127.0.0.1:7527</span>
+    <div class="spacer"></div>
+    <span class="app-aux">SAMPLE DATA</span>
+    <button class="new-command" id="backgroundNew"><svg class="ico"><use href="#icon-plus"/></svg>New command</button>
+  </header>
+  <main class="workspace">
+    <section class="table-section">
+      <div class="sectionbar"><h3>Commands</h3><span class="subtle-count">03 registered</span><div class="spacer"></div><div class="search-visual"><svg class="ico" style="width:13px;height:13px"><use href="#icon-search"/></svg>Filter commands</div></div>
+      <table class="process-table">
+        <thead><tr><th style="width:44%">NAME / COMMAND</th><th style="width:16%">STATUS</th><th style="width:12%">PID</th><th style="width:13%">UPTIME</th><th>ACTIONS</th></tr></thead>
+        <tbody>
+          <tr class="selected" data-demo="edit"><td><span class="process-name">HorribleCards Server</span><span class="process-command">horriblecards-server.exe --config server.yaml</span></td><td><span class="state">running</span></td><td>18240</td><td>01:42:18</td><td><button class="action-btn" title="Edit example" data-demo="edit"><svg class="ico"><use href="#icon-edit"/></svg></button><button class="action-btn" title="Run"><svg class="ico"><use href="#icon-play"/></svg></button><button class="action-btn" title="Stop"><svg class="ico"><use href="#icon-stop"/></svg></button><button class="action-btn" title="Restart"><svg class="ico"><use href="#icon-refresh"/></svg></button></td></tr>
+          <tr><td><span class="process-name">FileForge Worker</span><span class="process-command">python -m fileforge.worker</span></td><td><span class="state">running</span></td><td>13560</td><td>03:16:04</td><td><button class="action-btn" title="Edit example" data-demo="edit"><svg class="ico"><use href="#icon-edit"/></svg></button><button class="action-btn" title="Run"><svg class="ico"><use href="#icon-play"/></svg></button><button class="action-btn" title="Stop"><svg class="ico"><use href="#icon-stop"/></svg></button><button class="action-btn" title="Restart"><svg class="ico"><use href="#icon-refresh"/></svg></button></td></tr>
+          <tr><td><span class="process-name">Nightly Backup</span><span class="process-command">backup --daily --output ./archives</span></td><td><span class="state stopped">stopped</span></td><td>—</td><td>—</td><td><button class="action-btn" title="Edit example" data-demo="edit"><svg class="ico"><use href="#icon-edit"/></svg></button><button class="action-btn" title="Run"><svg class="ico"><use href="#icon-play"/></svg></button><button class="action-btn" title="Stop"><svg class="ico"><use href="#icon-stop"/></svg></button><button class="action-btn" title="Restart"><svg class="ico"><use href="#icon-refresh"/></svg></button></td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section class="log-section"><div class="log-header"><b>Logs</b><span>/ HorribleCards Server</span><div class="spacer"></div><small>200 LINES</small><small>AUTO-SCROLL ON</small></div><div class="log-content"><span class="t">[08:11:02]</span> starting process pid=18240
+<span class="t">[08:11:02]</span> loaded configuration: server.yaml
+<span class="t">[08:11:03]</span> <span class="success">server ready</span> · listening on 127.0.0.1:8001
+<span class="t">[08:11:06]</span> initialized 4 runtime modules
+<span class="t">[08:11:10]</span> <span class="warm">waiting for incoming connections...</span></div></section>
+  </main>
+  <footer class="app-foot"><span>PROCESS RUNNER</span><span>REGISTER · RUN · STOP · RESTART</span><div class="spacer"></div><span>UI CONCEPT · SAMPLE ONLY</span></footer>
+</div>
+
+<div class="veil" id="veil">
+  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+    <div class="dialog-header">
+      <div class="dialog-icon"><svg class="ico"><use href="#icon-terminal"/></svg></div>
+      <div><h1 id="dialogTitle">Edit command</h1><div class="kind" id="dialogKind">COMMAND CONFIGURATION</div></div>
+      <div class="spacer"></div>
+      <button class="close-btn" id="closeBtn" aria-label="Close"><svg class="ico"><use href="#icon-x"/></svg></button>
+    </div>
+    <div class="dialog-body">
+      <div class="field-group">
+        <div class="field"><label for="nameInput">Name</label><input id="nameInput" autocomplete="off" maxlength="128" placeholder="Process name"></div>
+        <div class="field"><label for="cwdInput">Working directory</label><input id="cwdInput" autocomplete="off" placeholder="C:\\path\\to\\project"></div>
+      </div>
+      <div class="field cmd-field"><label for="commandInput">Command <span class="required">*</span></label><textarea id="commandInput" rows="2" spellcheck="false" placeholder="Command to execute"></textarea></div>
+      <div class="section-separator"></div>
+      <div class="section-title">EXECUTION</div>
+      <div class="exec-row">
+        <div class="run-as">
+          <div class="field" style="margin-bottom:8px"><div class="field-label">Run as</div></div>
+          <div class="seg" role="group" aria-label="Execution identity">
+            <button type="button" id="runService"><svg class="ico"><use href="#icon-server"/></svg>Service account</button>
+            <button type="button" id="runSpecific"><svg class="ico"><use href="#icon-user"/></svg>Specific user</button>
+          </div>
+        </div>
+        <div class="auto-option"><label for="autostartInput">Auto start <input type="checkbox" id="autostartInput"><span class="switch"></span></label><small>When SpawnPoint starts</small></div>
+      </div>
+      <div class="identity-fields" id="identityFields">
+        <div class="field"><label for="usernameInput">Username</label><input id="usernameInput" spellcheck="false" autocomplete="off" placeholder=".\\runner-user"><div class="input-note" id="userHint"></div></div>
+        <div class="field"><label for="passwordInput">Password</label><div class="password-wrap"><input id="passwordInput" type="password" autocomplete="new-password" placeholder="Enter password"><button type="button" class="reveal" id="passwordReveal" aria-label="Show password"><svg class="ico"><use id="revealUse" href="#icon-eye"/></svg></button></div><div class="input-note" id="passwordHint"></div></div>
+      </div>
+      <div class="section-separator"></div>
+      <button class="env-trigger" id="envTrigger" type="button" aria-expanded="false"><svg class="ico" style="color:#8ca3b9"><use href="#icon-list"/></svg><strong>Environment variables</strong><span class="env-count" id="envCount">2</span><svg class="ico chevron"><use href="#icon-chevron"/></svg></button>
+      <div class="env-panel" id="envPanel"><div class="env-headers"><span>KEY</span><span>VALUE</span></div><div class="env-list" id="envList"></div><button class="add-variable" type="button" id="addEnv"><svg class="ico"><use href="#icon-plus"/></svg>Add variable</button></div>
+    </div>
+    <div class="dialog-footer"><span class="foot-meta">CHANGES APPLY ON NEXT RUN</span><div class="spacer"></div><button class="btn btn-plain" id="cancelBtn">Cancel</button><button class="btn btn-save" id="saveBtn">Save</button><button class="btn btn-main" id="saveRunBtn"><svg class="ico"><use href="#icon-refresh"/></svg><span id="saveRunText">Save &amp; Restart</span></button></div>
+  </section>
+</div>
+
+<!-- Preview-only mode switcher. Not part of the proposed actual SpawnPoint interface. -->
+<div class="proto-controls" aria-label="Prototype controls"><span class="proto-label">PREVIEW</span><div class="mini-group" role="group" aria-label="Dialog mode"><button id="modeNew">NEW</button><button id="modeEdit" class="active">EDIT</button></div><span class="proto-divider"></span><div class="mini-group" role="group" aria-label="Platform preview"><button id="platformWindows" class="active">WINDOWS</button><button id="platformLinux">LINUX</button></div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const state = {mode:'edit', os:'windows', runAs:'specific', envOpen:false, env:[['APP_ENV','production'],['LOG_LEVEL','info']], dirty:false};
+  let toastTimer;
+  function showToast(msg) {
+    const t=$('toast');t.textContent=msg;t.classList.add('on');clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('on'),3000);
+  }
+  function setValue(id, v){$(id).value=v;}
+  function sample(){
+    return state.os==='windows' ? {
+      name:'HorribleCards Server', cwd:'D:\\services\\HorribleCards', cmd:'.\\horriblecards-server.exe --config .\\config\\server.yaml', user:'.\\game-runner'
+    } : {
+      name:'HorribleCards Server', cwd:'/srv/horriblecards', cmd:'./horriblecards-server --config ./config/server.yaml', user:'game-runner'
+    };
+  }
+  function loadForm(){
+    const edit=state.mode==='edit', data=sample();
+    setValue('nameInput', edit?data.name:''); setValue('cwdInput',edit?data.cwd:'');
+    setValue('commandInput',edit?data.cmd:''); setValue('usernameInput',edit?data.user:'');
+    setValue('passwordInput',''); $('passwordInput').type='password';$('revealUse').setAttribute('href','#icon-eye');
+    state.env=edit?[['APP_ENV','production'],['LOG_LEVEL','info']]:[];
+    state.runAs=edit?'specific':'service';state.envOpen=false;
+    $('autostartInput').checked=edit;
+    $('dialogTitle').textContent=edit?'Edit command':'New command';
+    $('saveRunText').textContent=edit?'Save & Restart':'Save & Run';
+    $('saveRunBtn').querySelector('use').setAttribute('href',edit?'#icon-refresh':'#icon-play');
+    $('dialogKind').textContent='COMMAND CONFIGURATION';
+    state.dirty=false;update();
+  }
+  function update(){
+    $('modeNew').classList.toggle('active',state.mode==='new');
+    $('modeEdit').classList.toggle('active',state.mode==='edit');
+    $('platformWindows').classList.toggle('active',state.os==='windows');
+    $('platformLinux').classList.toggle('active',state.os==='linux');
+    $('runService').classList.toggle('active',state.runAs==='service');
+    $('runSpecific').classList.toggle('active',state.runAs==='specific');
+    $('runService').setAttribute('aria-pressed',String(state.runAs==='service'));
+    $('runSpecific').setAttribute('aria-pressed',String(state.runAs==='specific'));
+    $('identityFields').classList.toggle('hidden',state.runAs!=='specific');
+    $('cwdInput').placeholder=state.os==='windows'?'C:\\path\\to\\project':'/srv/project';
+    $('usernameInput').placeholder=state.os==='windows'?'.\\runner-user':'runner-user';
+    $('userHint').textContent=state.os==='windows'?'LOCAL\\user · DOMAIN\\user':'Linux account';
+    $('passwordInput').placeholder=state.mode==='edit'?'Leave blank to keep existing':'Enter password';
+    $('passwordHint').textContent=state.mode==='edit'?'Existing credential is not displayed':'Required for a specified user';
+    $('envTrigger').setAttribute('aria-expanded',String(state.envOpen));
+    $('envPanel').classList.toggle('open',state.envOpen);
+    $('envCount').textContent=String(state.env.length);
+    renderEnv();
+  }
+  function renderEnv(){
+    const list=$('envList');list.replaceChildren();
+    state.env.forEach(([key,value],idx)=>{
+      const item=document.createElement('div');item.className='env-entry';
+      const k=document.createElement('input');k.placeholder='NAME';k.value=key;k.setAttribute('aria-label',`Variable name ${idx+1}`);
+      const v=document.createElement('input');v.placeholder='Value';v.value=value;v.setAttribute('aria-label',`Variable value ${idx+1}`);
+      k.addEventListener('input',()=>{state.env[idx][0]=k.value;state.dirty=true;});
+      v.addEventListener('input',()=>{state.env[idx][1]=v.value;state.dirty=true;});
+      const rm=document.createElement('button');rm.className='env-remove';rm.type='button';rm.title='Remove variable';rm.setAttribute('aria-label',`Remove variable ${idx+1}`);
+      rm.innerHTML='<svg class="ico"><use href="#icon-x"/></svg>';
+      rm.addEventListener('click',()=>{state.env.splice(idx,1);state.dirty=true;update();});
+      item.append(k,v,rm);list.append(item);
+    });
+  }
+  function openModal(){ $('veil').classList.remove('hidden'); }
+  function closeModal(){ $('veil').classList.add('hidden'); }
+  function requestClose(){
+    if (state.dirty && !window.confirm('Discard changes in this preview?'))return;
+    closeModal();
+  }
+  $('modeNew').addEventListener('click',()=>{state.mode='new';loadForm();openModal();});
+  $('modeEdit').addEventListener('click',()=>{state.mode='edit';loadForm();openModal();});
+  $('platformWindows').addEventListener('click',()=>{if(state.os!=='windows'){state.os='windows';loadForm();}openModal();});
+  $('platformLinux').addEventListener('click',()=>{if(state.os!=='linux'){state.os='linux';loadForm();}openModal();});
+  $('runService').addEventListener('click',()=>{state.runAs='service';state.dirty=true;update();});
+  $('runSpecific').addEventListener('click',()=>{state.runAs='specific';state.dirty=true;update();});
+  $('autostartInput').addEventListener('change',()=>{state.dirty=true;});
+  ['nameInput','cwdInput','commandInput','usernameInput','passwordInput'].forEach(id=>$(id).addEventListener('input',()=>{state.dirty=true;}));
+  $('envTrigger').addEventListener('click',()=>{state.envOpen=!state.envOpen;update();});
+  $('addEnv').addEventListener('click',()=>{state.env.push(['','']);state.dirty=true;update();$('envList').lastElementChild?.querySelector('input')?.focus();});
+  $('passwordReveal').addEventListener('click',()=>{
+    const input=$('passwordInput'),show=input.type==='password';input.type=show?'text':'password';
+    $('revealUse').setAttribute('href',show?'#icon-eye-off':'#icon-eye');
+    $('passwordReveal').setAttribute('aria-label',show?'Hide password':'Show password');
+  });
+  $('closeBtn').addEventListener('click',requestClose);
+  $('cancelBtn').addEventListener('click',requestClose);
+  $('saveBtn').addEventListener('click',()=>showToast('UI preview only — no changes were saved.'));
+  $('saveRunBtn').addEventListener('click',()=>showToast('UI preview only — no command was executed.'));
+  $('backgroundNew').addEventListener('click',()=>{state.mode='new';loadForm();openModal();});
+  document.querySelectorAll('[data-demo="edit"]').forEach(btn=>btn.addEventListener('click',()=>{state.mode='edit';loadForm();openModal();}));
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('veil').classList.contains('hidden'))requestClose();});
+  loadForm();
+})();
+</script>
+</body>
+</html>

@@ -32,19 +32,33 @@ class Element {
   addEventListener(name, fn) { (this.events[name] ||= []).push(fn); }
   emit(name) { for (const fn of this.events[name] || []) fn({ target: this }); }
   focus() {}
+  setAttribute(k,v){(this.attrs ||= {})[k]=String(v);}
+  getAttribute(k){return (this.attrs || {})[k];}
+  replaceChildren(...nodes){this.children=nodes;}
+  append(...nodes){(this.children ||= []).push(...nodes);}
+  querySelectorAll(){return this.all || [];}
+  dispatchEvent(event){this.emit(event.type);return true;}
+  getClientRects(){return [1];}
+  get lastElementChild(){return (this.children || []).at(-1);}
+  querySelector(){return (this.children || [])[0];}
+  contains(){return false;}
+
 }
 
 function harness(persisted = true) {
   const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
   const elements = new Map([...ids].map(id => [id, new Element()]));
+  elements.forEach((e,id)=>{e.id=id;e.children=[];e.all=[...elements.values()];});
   const calls = [];
   const entries = new Map();
   const ctx = vm.createContext({
     console,
+    Event:class{constructor(type){this.type=type;}},
     window: { localStorage: { getItem() { return null; }, setItem() {} } },
     document: {
       getElementById(id) { assert.ok(elements.has(id), `unknown DOM id: ${id}`); return elements.get(id); },
       addEventListener() {},
+      createElement(){return new Element();},
     },
     setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; },
     fetch: async (url, options = {}) => {
@@ -52,7 +66,8 @@ function harness(persisted = true) {
       const body = options.body ? JSON.parse(options.body) : undefined;
       calls.push({ url, method, body });
       let data;
-      if (method === 'GET' && url === '/processes') {
+      if(method === 'GET' && url === '/runtime'){data={ok:true,os:'windows',service_account:'service',run_as_supported:true,run_as_reason:''};}
+      else if (method === 'GET' && url === '/processes') {
         data = { ok: true, processes: [...entries.values()] };
       } else if (method === 'GET' && url.includes('/logs')) {
         data = { ok: true, text: '', size: 0, next_offset: 0 };

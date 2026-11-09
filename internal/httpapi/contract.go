@@ -50,6 +50,7 @@ type ContractError struct {
 func ContractSnapshot() Contract {
 	s := &Server{index: []byte{1}, help: []byte{1}}
 	routes := []ContractRoute{
+		contractRoute(s, "runtime.info", "/runtime", "/runtime", "runtime_response", http.MethodGet, http.MethodHead),
 		contractRoute(s, "process.list", "/processes", "/processes", "list_response", http.MethodGet, http.MethodHead),
 		contractRoute(s, "process.create", "/processes", "/processes", "write_response", http.MethodPost),
 		contractRoute(s, "process.get", "/processes/proc_contract", "/processes/{id}", "process_response", http.MethodGet, http.MethodHead),
@@ -88,6 +89,7 @@ func ContractSnapshot() Contract {
 	return Contract{
 		Routes: routes,
 		PathMethods: map[string][]string{
+			"/runtime":                append([]string(nil), s.resolve("/runtime").methods...),
 			"/processes":              append([]string(nil), s.resolve("/processes").methods...),
 			"/processes/{id}":         append([]string(nil), s.resolve("/processes/proc_contract").methods...),
 			"/processes/{id}/run":     append([]string(nil), s.resolve("/processes/proc_contract/run").methods...),
@@ -102,6 +104,7 @@ func ContractSnapshot() Contract {
 			{Name: "cwd", Type: "string", Required: false, Nullable: true, Default: nil, ValidationOrder: 3},
 			{Name: "env", Type: "object<string,string>", Required: false, Nullable: true, Default: "empty_object", ValidationOrder: 4},
 			{Name: "auto_start", Type: "boolean", Required: false, Nullable: false, Default: false, ValidationOrder: 5},
+			{Name: "run_as", Type: "object", Required: false, Nullable: false, Default: nil, ValidationOrder: 6},
 		},
 		Statuses: []ContractStatus{
 			{Name: runner.StatusStopped, NullFields: []string{}, ConditionalFields: []string{"pid", "exit_code", "started_at", "ended_at"}},
@@ -112,7 +115,8 @@ func ContractSnapshot() Contract {
 		},
 		Errors: errors,
 		SchemaKeys: map[string][]string{
-			"registration":     {"cmd", "label", "cwd", "env", "auto_start"},
+			"runtime_response": {"ok", "os", "service_account", "run_as_supported", "run_as_reason"},
+			"registration":     {"cmd", "label", "cwd", "env", "auto_start", "run_as"},
 			"process":          jsonKeys(processJSON{}),
 			"list_response":    jsonKeys(listResponse{}),
 			"write_response":   jsonKeys(writeResponse{}),
