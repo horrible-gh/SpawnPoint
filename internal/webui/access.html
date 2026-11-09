@@ -40,12 +40,41 @@ dialog{padding:0;color:var(--text);border:1px solid #414e5e;background:var(--sur
 @media(max-width:420px){.login-method-picker button{font-size:11px;padding:8px 5px;gap:5px}.login-method-picker button .ico{width:13px;height:13px}.login-source-note{padding:10px 11px}}
 
 .shell{min-height:100dvh}.sidebar{top:0;height:100dvh}.topbar{top:0}.login-page{min-height:100dvh}.preview-rail{display:none}.log-body{margin:0}.login-card input{width:100%}.login-card .check-pill input{width:16px}.login-card .field{margin-bottom:15px}
+
+/* Keep authentication focused: support and FAQ live in an on-demand dialog. */
+.auth-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.auth-help{border:1px solid #334557;border-radius:7px;background:#1a2735;color:#a9c5df;display:flex;gap:6px;align-items:center;font-size:11px;font-weight:600;padding:7px 10px;white-space:nowrap}
+.auth-help:hover{border-color:#6087ab;color:#e1f0ff;background:#25374b}
+.auth-help .ico{width:14px;height:14px}
+.login-card .login-method-picker{margin-top:22px;margin-bottom:22px}
+.login-card .auth-hint{font-size:11px;color:#9badc2;margin:10px 0 0}
+.auth-command{margin-top:0;padding:14px;border:1px solid #344658;background:#101923;border-radius:8px}
+.auth-command-label{font-size:10px;color:#95adc5;font-weight:650;margin-bottom:9px}
+.auth-command code{display:block;padding:11px;border-radius:6px;background:#0b121a;border:1px solid #2a3a4a;line-height:1.6;color:#d4e6fa;font-size:11px;white-space:pre-wrap;overflow-wrap:anywhere}
+.auth-command-actions{margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:9px;flex-wrap:wrap}
+.auth-command-actions .btn{height:32px}
+.auth-faq-dialog{width:min(530px,calc(100% - 28px));max-height:calc(100dvh - 42px)}
+.auth-faq-dialog .dialog-body{padding:12px 24px 22px}
+.auth-faq{margin:0;padding:0;list-style:none}
+.auth-faq-item{border-bottom:1px solid var(--edge)}
+.auth-faq-item:last-child{border-bottom:0}
+.auth-faq-item summary{display:flex;align-items:center;gap:12px;padding:15px 2px;color:#cfdeef;font-size:12px;font-weight:600;cursor:pointer;list-style:none}
+.auth-faq-item summary::-webkit-details-marker{display:none}
+.auth-faq-item summary:after{content:'+';font-size:18px;font-weight:400;color:#92afca;margin-left:auto}
+.auth-faq-item[open] summary:after{content:'−'}
+.auth-faq-answer{padding:0 10px 16px 2px;color:#a3b4c7;font-size:11px;line-height:1.8}
+.auth-faq-answer code{display:block;margin:9px 0;padding:9px 11px;background:#0e151e;border:1px solid #304053;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere;color:#cde0f5;font-size:11px}
+.auth-token-form .field{margin:0 0 14px}
+.auth-token-form .btn.primary{width:100%;margin-top:6px}
+.auth-token-form .auth-command{margin-bottom:18px}
+@media(max-width:420px){.auth-faq-dialog .dialog-body{padding:12px 17px 18px}.auth-command-actions{align-items:stretch}.auth-command-actions .btn{flex:1}}
 </style>
 </head><body>
 
 <div id="root"></div>
 <dialog id="modal" aria-labelledby="modalTitle"></dialog>
 <dialog id="confirm" class="narrow" aria-labelledby="confirmTitle"></dialog>
+<dialog id="authHelpDialog" class="auth-faq-dialog" aria-labelledby="authHelpTitle"></dialog>
 <dialog id="reauthDialog" class="narrow" aria-label="재인증"></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <noscript>SpawnPoint 화면을 사용하려면 JavaScript가 필요합니다.</noscript>
@@ -181,23 +210,48 @@ function setupCommandText(command){
  const local=app.runtime.local_setup_url||'http://127.0.0.1:7527';
  return prefix+' '+command+(local==='http://127.0.0.1:7527'?'':' --url '+local);
 }
+function authHeading(title){return `<div class="auth-heading"><h1>${title}</h1><button type="button" class="auth-help" data-act="auth-help" title="도움말 / FAQ" aria-label="도움말 열기">${icon('info')}도움말</button></div>`;}
+function openAuthHelp(tokenForm=false){
+ const dlg=$('#authHelpDialog'),win=state.os==='windows',setup=app.setup;
+ const cli=setupCommandText('admin init'),status=setupCommandText('setup status'),token=setupCommandText('setup token');
+ let title='도움말',body='';
+ if(tokenForm){
+  title='토큰으로 관리자 등록';
+  body=`<form id="setupForm" class="auth-token-form"><div class="auth-command"><div class="auth-command-label">서버 터미널</div><code>${esc(token)}</code></div><div class="field"><label for="setupToken">초기 설정 토큰</label><input id="setupToken" name="setup_token" autocomplete="off" required></div><div class="field"><label for="setupLogin">관리자 ID</label><input id="setupLogin" name="login" autocomplete="username" required placeholder="admin"></div><div class="field"><label for="setupName">표시 이름</label><input id="setupName" name="name" required placeholder="관리자"></div><div class="field"><label for="setupPassword">비밀번호</label><input id="setupPassword" name="password" type="password" autocomplete="new-password" minlength="12" required placeholder="12자 이상"></div><div class="field"><label for="setupRepeat">비밀번호 확인</label><input id="setupRepeat" name="repeat" type="password" autocomplete="new-password" minlength="12" required></div><button class="btn primary" type="submit" ${app.runtime.secure?'':'disabled'}>관리자 생성</button><div class="inline-error" id="loginError" role="alert"></div></form>`;
+ }else{
+  const items=setup?[
+   ['어떤 계정으로 설정하나요?',win?'이 서버의 Windows Administrators 계정으로 인증합니다.':'이 서버의 root 또는 관리자 sudo 계정으로 인증합니다.'],
+   ['OS 관리자 인증이 안 되나요?',`서버의 ${win?'관리자 PowerShell':'sudo 터미널'}에서 다음 명령을 실행하세요.<code>${esc(cli)}</code>`],
+   ['DB 경로·상태를 확인하려면?',`서버에서 다음 명령을 실행하세요.<code>${esc(status)}</code>`],
+   ['토큰으로 직접 등록하려면?',`서버에서 <code>${esc(token)}</code>으로 토큰을 확인한 후, 아래 버튼을 이용하세요.<div style="margin-top:12px"><button class="btn small" type="button" data-act="setup-token-form">토큰 입력</button></div>`]
+  ]:[
+   ['OS 계정과 SpawnPoint 계정은?',`OS 계정은 이 서버의 ${win?'Windows':'Linux'} 계정이고, SpawnPoint 계정은 관리자에게 발급받은 자체 계정입니다.`],
+   ['로그인할 수 없나요?','계정·비밀번호를 확인하고, 다른 로그인 방식을 선택해 보세요. 계정과 권한은 관리자가 설정합니다.'],
+   ['OS 비밀번호를 저장하나요?','OS 계정 로그인 비밀번호는 저장하지 않습니다.'],
+   ['원격에서 로그인하려면?','서버 PC의 localhost 또는 HTTPS로 접속해야 합니다.']
+  ];
+  body=`<div class="auth-faq">${items.map(([q,a])=>`<details class="auth-faq-item"><summary>${q}</summary><div class="auth-faq-answer">${a}</div></details>`).join('')}</div>`;
+ }
+ dlg.innerHTML=`<div class="dialog-layout"><header class="dialog-head"><div class="icon-box">${icon(tokenForm?'key':'info')}</div><div><h2 id="authHelpTitle">${title}</h2></div><button type="button" class="icon-btn" data-act="auth-help-close" aria-label="닫기">${icon('x')}</button></header><div class="dialog-body">${body}</div></div>`;
+ if(!dlg.open)dlg.showModal();
+ (tokenForm?dlg.querySelector('#setupToken'):dlg.querySelector('[data-act="auth-help-close"]'))?.focus();
+}
 function setupPage(){
  const isOS=app.setupMode==='os',win=state.os==='windows',secure=app.runtime.secure,available=app.runtime.os_admin_setup_available;
- const cli=setupCommandText('admin init'),status=setupCommandText('setup status'),token=setupCommandText('setup token');
+ const cli=setupCommandText('admin init');
  const warning=!secure?notice('현재는 원격 HTTP 접속입니다. 서버 PC의 localhost에서 설정하거나 아래 서버 터미널 명령을 사용하세요.','amber','lock'):'';
- const terminal=`<div class="login-source-note">${icon('terminal')}<div><strong>서버 터미널에서 설정</strong><small>${win?'관리자 권한 PowerShell':'서버의 sudo 권한 터미널'}에서 실행하세요.</small></div></div><pre style="white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:12px">${esc(cli)}</pre><p class="hint">실행 중인 서버를 찾아 자체 관리자 계정을 만듭니다. 토큰 파일을 찾을 필요가 없습니다.</p><button type="button" class="btn" data-act="setup-refresh">설정 완료 확인</button>`;
  let content='';
  if(isOS){
-  content=`<p class="intro">${win?'서버 Windows의 Administrators 계정':'서버 Linux의 root 또는 관리자 sudo 계정'}을 인증해 최초 관리자로 등록합니다.</p>${!available?notice(esc(app.runtime.os_login_reason||'OS 인증을 사용할 수 없습니다. 서버 터미널 명령을 이용하세요.'),'amber','lock'):''}<form id="setupOSForm"><div class="field"><label for="setupOSLogin">OS 관리자 계정</label><input id="setupOSLogin" name="login" autocomplete="username" placeholder="${win?'.\\username / DOMAIN\\username':'root / linux-admin'}" required ${secure&&available?'':'disabled'}></div><div class="field"><label for="setupOSPassword">OS 비밀번호</label><input id="setupOSPassword" name="password" type="password" autocomplete="current-password" required ${secure&&available?'':'disabled'}></div><button class="btn primary" type="submit" ${secure&&available?'':'disabled'}>인증하고 관리자 등록</button><p class="hint">OS 비밀번호는 저장하지 않습니다. 기존 프로세스와 자동 시작 설정은 유지됩니다.</p><div class="inline-error" id="loginError" role="alert"></div></form><details style="margin-top:20px"><summary>OS 인증이 안 되나요?</summary>${terminal}</details>`;
+  content=`${!available?notice(esc(app.runtime.os_login_reason||'OS 인증을 사용할 수 없습니다.'),'amber','lock'):''}<form id="setupOSForm"><div class="field"><label for="setupOSLogin">OS 관리자 계정</label><input id="setupOSLogin" name="login" autocomplete="username" placeholder="${win?'.\\username / DOMAIN\\username':'root / linux-admin'}" required ${secure&&available?'':'disabled'}></div><div class="field"><label for="setupOSPassword">OS 비밀번호</label><input id="setupOSPassword" name="password" type="password" autocomplete="current-password" required ${secure&&available?'':'disabled'}></div><button class="btn primary" type="submit" ${secure&&available?'':'disabled'}>관리자 등록</button><div class="inline-error" id="loginError" role="alert"></div></form>`;
  }else{
-  content=`${terminal}<details id="tokenSetup" style="margin-top:24px"><summary>토큰으로 직접 설정</summary><p class="hint">서버 터미널에서 아래 명령으로 토큰을 표시합니다.</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px">${esc(token)}</pre><form id="setupForm"><div class="field"><label for="setupToken">초기 설정 토큰</label><input id="setupToken" name="setup_token" autocomplete="off" required></div><div class="field"><label for="setupLogin">관리자 ID</label><input id="setupLogin" name="login" autocomplete="username" required placeholder="admin"></div><div class="field"><label for="setupName">표시 이름</label><input id="setupName" name="name" required placeholder="관리자"></div><div class="field"><label for="setupPassword">비밀번호</label><input id="setupPassword" name="password" type="password" autocomplete="new-password" minlength="12" required placeholder="12자 이상"></div><div class="field"><label for="setupRepeat">비밀번호 확인</label><input id="setupRepeat" name="repeat" type="password" autocomplete="new-password" minlength="12" required></div><button class="btn primary" type="submit" ${secure?'':'disabled'}>관리자 생성</button><div class="inline-error" id="loginError" role="alert"></div></form></details>`;
+  content=`<div class="auth-command"><div class="auth-command-label">서버에서 실행</div><code>${esc(cli)}</code><div class="auth-command-actions"><button type="button" class="btn small" data-act="setup-refresh">설정 완료 확인</button><button type="button" class="link" data-act="setup-token-form">토큰으로 설정</button></div></div>`;
  }
- return `<main class="login-page"><div class="login-wrap"><div class="login-brand">${brand()}</div><section class="login-card"><h1>첫 관리자 설정</h1><div class="login-method-picker" role="tablist" aria-label="최초 관리자 설정 방식"><button type="button" role="tab" data-act="setup-mode" data-mode="os" aria-selected="${isOS}" class="${isOS?'active':''}">${icon('server')}OS 관리자 인증</button><button type="button" role="tab" data-act="setup-mode" data-mode="local" aria-selected="${!isOS}" class="${!isOS?'active':''}">${icon('user')}SpawnPoint 계정</button></div>${warning}${content}<details style="margin-top:24px"><summary>상태·DB 경로 확인</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px">${esc(status)}</pre><p class="hint">실행 중인 서버의 실제 DB·토큰 경로와 초기화 상태를 표시합니다.</p></details></section></div></main>`;
+ return `<main class="login-page"><div class="login-wrap"><div class="login-brand">${brand()}</div><section class="login-card">${authHeading('첫 관리자 설정')}<div class="login-method-picker" role="tablist" aria-label="최초 관리자 설정 방식"><button type="button" role="tab" data-act="setup-mode" data-mode="os" aria-selected="${isOS}" class="${isOS?'active':''}">${icon('server')}OS 관리자 인증</button><button type="button" role="tab" data-act="setup-mode" data-mode="local" aria-selected="${!isOS}" class="${!isOS?'active':''}">${icon('user')}SpawnPoint 계정</button></div>${warning}${content}</section></div></main>`;
 }
 function renderLogin(){
  if(app.setup)return setupPage();
  const secure=app.runtime.secure,isOS=state.loginMode==='os',allowed=isOS?(db.settings.osLogin&&app.runtime.os_login_available):db.settings.localLogin;
- return `<main class="login-page"><div class="login-wrap"><div class="login-brand">${brand()}</div><section class="login-card"><h1>로그인</h1><p class="intro">인증할 계정 종류를 선택하세요.</p>${!secure?`<div style="margin-top:18px">${notice('원격 로그인에는 HTTPS 접속이 필요합니다.','amber','lock')}</div>`:''}<div class="login-method-picker" role="tablist" aria-label="로그인 계정 종류"><button type="button" role="tab" data-act="login-mode" data-mode="os" class="${isOS?'active':''}" aria-selected="${isOS}" ${db.settings.osLogin&&app.runtime.os_login_available?'':'disabled'}>${icon('server')}OS 계정</button><button type="button" role="tab" data-act="login-mode" data-mode="local" class="${!isOS?'active':''}" aria-selected="${!isOS}" ${db.settings.localLogin?'':'disabled'}>${icon('user')}SpawnPoint 계정</button></div><div class="login-source-note">${icon(isOS?'monitor':'key')}<div><strong>${isOS?(state.os==='windows'?'Windows 계정 로그인':'Linux 계정 로그인'):'SpawnPoint 자체 계정 로그인'}</strong>${isOS?'서버 OS 계정으로 인증':'SpawnPoint에 등록된 사용자로 인증'}<small>${isOS?'OS 비밀번호는 저장하지 않습니다.':'자체 계정의 비밀번호를 입력하세요.'}</small></div></div>${db.settings.osLogin&&!app.runtime.os_login_available?`<p class="hint">${esc(app.runtime.os_login_reason)}</p>`:''}<form id="loginForm"><div class="field"><label for="loginId">${isOS?'OS 계정 사용자명':'SpawnPoint 사용자 ID'}</label><input id="loginId" name="login" autocomplete="username" required ${secure&&allowed?'':'disabled'} placeholder="${isOS?(state.os==='windows'?'.\\username / DOMAIN\\username':'linux-user'):'사용자 ID'}"></div><div class="field"><label for="loginPassword">비밀번호</label><div class="password-wrap"><input id="loginPassword" name="password" type="password" autocomplete="current-password" required ${secure&&allowed?'':'disabled'}>${ib('비밀번호 표시','reveal-login','eye')}</div></div><label class="check-pill" style="margin-bottom:16px"><input type="checkbox" name="remember">이 브라우저에서 세션 유지</label><button class="btn primary" type="submit" ${secure&&allowed?'':'disabled'}>${isOS?'OS 계정으로 로그인':'SpawnPoint 계정으로 로그인'}${icon('arrow')}</button><div class="inline-error" id="loginError" role="alert"></div></form>${db.settings.guest?`<button class="guest-link" data-act="guest">${icon('eye')}로그인 없이 둘러보기${icon('arrow')}</button>`:''}</section><div class="login-foot"><span>${icon('lock')} ${state.transport==='https'?'HTTPS':state.transport==='local'?'LOCALHOST':'HTTP'}</span><span>${esc(app.runtime.server)} · ${esc(state.os.toUpperCase())}</span></div></div></main>`;
+ return `<main class="login-page"><div class="login-wrap"><div class="login-brand">${brand()}</div><section class="login-card">${authHeading('로그인')}${!secure?`<div style="margin-top:18px">${notice('원격 로그인에는 HTTPS 접속이 필요합니다.','amber','lock')}</div>`:''}<div class="login-method-picker" role="tablist" aria-label="로그인 계정 종류"><button type="button" role="tab" data-act="login-mode" data-mode="os" class="${isOS?'active':''}" aria-selected="${isOS}" ${db.settings.osLogin&&app.runtime.os_login_available?'':'disabled'}>${icon('server')}OS 계정</button><button type="button" role="tab" data-act="login-mode" data-mode="local" class="${!isOS?'active':''}" aria-selected="${!isOS}" ${db.settings.localLogin?'':'disabled'}>${icon('user')}SpawnPoint 계정</button></div><form id="loginForm"><div class="field"><label for="loginId">${isOS?'OS 계정 사용자명':'SpawnPoint 사용자 ID'}</label><input id="loginId" name="login" autocomplete="username" required ${secure&&allowed?'':'disabled'} placeholder="${isOS?(state.os==='windows'?'.\\username / DOMAIN\\username':'linux-user'):'사용자 ID'}"></div><div class="field"><label for="loginPassword">비밀번호</label><div class="password-wrap"><input id="loginPassword" name="password" type="password" autocomplete="current-password" required ${secure&&allowed?'':'disabled'}>${ib('비밀번호 표시','reveal-login','eye')}</div></div><label class="check-pill" style="margin-bottom:16px"><input type="checkbox" name="remember">이 브라우저에서 세션 유지</label><button class="btn primary" type="submit" ${secure&&allowed?'':'disabled'}>로그인${icon('arrow')}</button><div class="inline-error" id="loginError" role="alert"></div></form>${db.settings.guest?`<button class="guest-link" data-act="guest">${icon('eye')}로그인 없이 둘러보기${icon('arrow')}</button>`:''}</section><div class="login-foot"><span>${icon('lock')} ${state.transport==='https'?'HTTPS':state.transport==='local'?'LOCALHOST':'HTTP'}</span><span>${esc(app.runtime.server)} · ${esc(state.os.toUpperCase())}</span></div></div></main>`;
 }
 function view(){switch(state.route){case '/admin':return overviewView();case '/admin/users':return usersView();case '/admin/groups':return groupsView();case '/admin/permissions':return permissionsView();case '/admin/security':return securityView();case '/admin/audit':return auditView();case '/account':return accountView();default:return processesView();}}
 function overviewView(){
@@ -317,6 +371,9 @@ document.addEventListener('click',async e=>{
  case 'close-menu':closeMenu();break;
  case 'login':navigate('/login');break;
  case 'logout':await request('/auth/logout',{});app.csrf='';state.actor=null;state.policyDirty=false;state.policyDraft=null;state.checked=[];await loadIdentity();navigate('/login',true);break;
+ case 'auth-help':openAuthHelp();break;
+ case 'auth-help-close':$('#authHelpDialog').close();break;
+ case 'setup-token-form':openAuthHelp(true);break;
  case 'setup-mode':app.setupMode=b.dataset.mode;render();break;
  case 'setup-refresh':await loadIdentity();render();break;
  case 'login-mode':state.loginMode=b.dataset.mode;render();$('#loginId')?.focus();break;
@@ -388,7 +445,7 @@ document.addEventListener('submit',async e=>{
  if(f.id==='loginForm'||f.id==='setupForm'||f.id==='setupOSForm'){
   const setup=f.id==='setupForm',password=String(form.get('password')||'');if(setup&&password!==form.get('repeat'))throw new Error('비밀번호 확인이 일치하지 않습니다.');
   const data=await request(f.id==='setupOSForm'?'/auth/setup-os':setup?'/auth/setup':'/auth/login',{method:state.loginMode,login:String(form.get('login')||'').trim(),password,name:setup?String(form.get('name')||''):'',setup_token:setup?String(form.get('setup_token')||''):'',remember:form.has('remember')});
-  app.csrf=data.csrf;app.setup=false;state.actor=data.user.id;f.reset();await loadState();navigate('/processes',true);return;
+  app.csrf=data.csrf;app.setup=false;state.actor=data.user.id;f.reset();if($('#authHelpDialog').open)$('#authHelpDialog').close();await loadState();navigate('/processes',true);return;
  }
  if(f.id==='securityForm'){
   await adminRequest({action:'settings',settings:{...db.settings,osLogin:form.has('osLogin'),localLogin:form.has('localLogin'),osAuto:false,session:String(form.get('session')),reauth:form.has('reauth'),lockout:true}});await refresh();toast('인증 정책을 저장했습니다.');return;
@@ -419,6 +476,7 @@ document.addEventListener('submit',async e=>{
  }catch(error){if(f.id==='loginForm'||f.id==='setupForm'||f.id==='setupOSForm')$('#loginError').textContent=error.message;else handleError(error);}
  finally{f.dataset.busy='0';buttons.forEach(b=>b.disabled=false);}
 });
+$('#authHelpDialog').addEventListener('click',e=>{if(e.target.id==='authHelpDialog')e.target.close();});
 $('#modal').addEventListener('cancel',e=>{e.preventDefault();closeModal();});
 $('#confirm').addEventListener('cancel',()=>confirmCallback=null);
 $('#reauthDialog').addEventListener('cancel',()=>{reauthResolve?.reject(new Error('재인증을 취소했습니다.'));reauthResolve=null;});
