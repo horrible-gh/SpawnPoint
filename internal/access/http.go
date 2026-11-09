@@ -45,6 +45,9 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(w, 413, "요청이 너무 큽니다")
 		return
 	}
+	if !prepareBody(w, r) {
+		return
+	}
 	if r.URL.Path != path.Clean(r.URL.Path) {
 		fail(w, 404, "경로를 찾을 수 없습니다")
 		return

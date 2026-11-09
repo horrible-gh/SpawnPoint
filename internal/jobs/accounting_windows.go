@@ -15,9 +15,9 @@ type jobBasicAccountingInformation struct {
 	ThisPeriodTotalUserTime   int64
 	ThisPeriodTotalKernelTime int64
 	TotalPageFaultCount       uint32
-	TotalProcesses           uint32
-	ActiveProcesses          uint32
-	TotalTerminatedProcesses uint32
+	TotalProcesses            uint32
+	ActiveProcesses           uint32
+	TotalTerminatedProcesses  uint32
 }
 
 // ActiveProcesses counts the whole job, not just the original supervisor.
