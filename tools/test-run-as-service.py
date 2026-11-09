@@ -105,7 +105,23 @@ try:
     installed = True
     control('start')
     setup=(data_dir/'spawnpoint.db.setup-token').read_text().strip()
-    result=api('/auth/setup',{'login':'service-admin','name':'Service administrator','password':ADMIN_PASSWORD,'setup_token':setup})
+    cli_prefix=[] if WIN else ['sudo','-n','--']
+    status=subprocess.check_output([EXE,'setup','status','--url',URL],text=True,encoding='utf-8')
+    assert str(data_dir/'spawnpoint.db') in status and setup not in status
+    shown=subprocess.check_output(cli_prefix+[EXE,'setup','token','--url',URL],text=True,encoding='utf-8').strip()
+    assert shown == setup, 'CLI discovers protected service token without a guessed DB path'
+    os_admin=os.environ.get('SPAWNPOINT_ADMIN_TEST_USER')
+    os_password=os.environ.get('SPAWNPOINT_ADMIN_TEST_PASSWORD')
+    if os_admin and os_password:
+        result=api('/auth/setup-os',{'login':os_admin,'password':os_password})
+        assert result['user']['auth']=='os' and result['user']['role']=='admin', 'OS bootstrap under real service identity'
+        CSRF=result['csrf']
+        assert not (data_dir/'spawnpoint.db.setup-token').exists()
+        state=api('/api/access/state')
+        api('/api/access/admin',{'action':'user.upsert','revision':state['revision'],'user':{'login':'service-admin','name':'Service administrator','auth':'local','password':ADMIN_PASSWORD,'role':'admin','status':'active','groups':[]}})
+        result=api('/auth/login',{'method':'local','login':'service-admin','password':ADMIN_PASSWORD})
+    else:
+        result=api('/auth/setup',{'login':'service-admin','name':'Service administrator','password':ADMIN_PASSWORD,'setup_token':setup})
     CSRF=result['csrf']
     # Provision and authenticate the OS account while the server actually runs
     # as LocalService/systemd, without changing the process execution identity.
@@ -153,7 +169,7 @@ try:
     until(gone)
     assert ADMIN_PASSWORD.encode() not in (data_dir / 'spawnpoint.db').read_bytes()
     assert PASSWORD.encode() not in (data_dir / 'spawnpoint.db').read_bytes()
-    print('PASS: access gateway local/OS login, protected setup token, shipped service installer, real service identity, authenticated target user, descendant termination, encrypted restart/auto-start and service shutdown')
+    print('PASS: service OS-admin bootstrap, CLI path/token discovery, access gateway local/OS login, protected setup token, shipped service installer, real service identity, authenticated target user, descendant termination, encrypted restart/auto-start and service shutdown')
 except Exception:
     # Preserve evidence before cleanup; never print the submitted credentials.
     if installed:

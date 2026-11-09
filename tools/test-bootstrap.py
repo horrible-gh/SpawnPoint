@@ -58,7 +58,7 @@ class Server:
         prefix=['sudo','-n','--'] if elevated and os.name!='nt' and os.geteuid()!=0 else []
         # A different cwd/env must not make the CLI guess a different database.
         env={**os.environ,'SPAWNPOINT_DB_PATH':str(self.root/'WRONG-do-not-create.db')}
-        return subprocess.run(prefix+[EXE,*args,'--url',self.base],input=stdin,text=True,capture_output=True,cwd=self.root.parent,env=env,timeout=30)
+        return subprocess.run(prefix+[EXE,*args,'--url',self.base],input=stdin,text=True,encoding="utf-8",capture_output=True,cwd=self.root.parent,env=env,timeout=30)
 
 with tempfile.TemporaryDirectory(prefix='sp-bootstrap-') as work:
     root=Path(work)
