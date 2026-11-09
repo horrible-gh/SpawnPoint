@@ -4,6 +4,8 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"strings"
+
+	"spawnpoint/internal/access"
 )
 
 // authorised is the token check of 0008-L 4.1.
@@ -17,6 +19,9 @@ import (
 // browser open its own credentials dialog over the screen, which cannot supply
 // a Bearer token and cannot be dismissed back to the page.
 func (s *Server) authorised(r *http.Request) bool {
+	if access.Managed(r) {
+		return true
+	}
 	if len(s.tokens) == 0 {
 		return true
 	}

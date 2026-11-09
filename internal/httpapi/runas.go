@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	"spawnpoint/internal/access"
 	"spawnpoint/internal/runas"
 	"spawnpoint/internal/runner"
 )
@@ -80,7 +81,7 @@ func (s *Server) identityTransport(r *http.Request) bool {
 	if os.Getenv("SPAWNPOINT_TRUST_LOOPBACK_PROXY") == "1" && loopback(r.RemoteAddr) && r.Header.Get("X-Forwarded-Proto") == "https" {
 		secure = true
 	}
-	return secure && len(s.tokens) > 0 && s.authorised(r)
+	return secure && ((access.Authenticated(r)) || (len(s.tokens) > 0 && s.authorised(r)))
 }
 func (s *Server) identityGuard(w http.ResponseWriter, r *http.Request, body bool) bool {
 	if !sameOrigin(r) {

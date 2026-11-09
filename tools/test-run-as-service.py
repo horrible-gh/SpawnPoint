@@ -3,6 +3,8 @@
 Never run against an existing installation. GitHub-hosted disposable runners only.
 """
 import ctypes
+import http.cookiejar
+import secrets
 import json
 import os
 from pathlib import Path
@@ -21,6 +23,10 @@ PASSWORD = os.environ['SPAWNPOINT_RUNAS_TEST_PASSWORD']
 EXE = str(Path(sys.argv[1]).resolve())
 URL = 'http://127.0.0.1:7527'
 NAME = 'SpawnPoint' if WIN else 'spawnpoint'
+COOKIE_JAR=http.cookiejar.CookieJar()
+OPENER=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(COOKIE_JAR))
+CSRF=''
+ADMIN_PASSWORD='Service!'+secrets.token_hex(20)
 
 
 def run(*args):
@@ -29,8 +35,8 @@ def run(*args):
 
 def api(path, data=None, method=None):
     req = urllib.request.Request(URL + path, data=None if data is None else json.dumps(data).encode(),
-                                 method=method, headers={'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=45) as response:
+                                 method=method, headers={'Content-Type': 'application/json','X-CSRF-Token':CSRF})
+    with OPENER.open(req, timeout=45) as response:
         return json.load(response)
 
 
@@ -98,6 +104,17 @@ try:
         run('sudo', 'sh', 'tools/install-service.sh', '--user', os.environ['USER'], '--source', EXE)
     installed = True
     control('start')
+    setup=(data_dir/'spawnpoint.db.setup-token').read_text().strip()
+    result=api('/auth/setup',{'login':'service-admin','name':'Service administrator','password':ADMIN_PASSWORD,'setup_token':setup})
+    CSRF=result['csrf']
+    # Provision and authenticate the OS account while the server actually runs
+    # as LocalService/systemd, without changing the process execution identity.
+    state=api('/api/access/state')
+    api('/api/access/admin',{'action':'user.upsert','revision':state['revision'],'user':{'login':'native-linked','name':'Native account','auth':'os','external':USER,'role':'viewer','status':'active','groups':[]}})
+    native=api('/auth/login',{'method':'os','login':USER,'password':PASSWORD})
+    assert native['user']['login']=='native-linked', 'OS login through service'
+    result=api('/auth/login',{'method':'local','login':'service-admin','password':ADMIN_PASSWORD})
+    CSRF=result['csrf']
     runtime = api('/runtime')
     assert runtime['run_as_supported'], runtime
     if WIN:
@@ -106,7 +123,7 @@ try:
     else:
         assert runtime['service_account'] == os.environ['USER'], runtime
         command = 'id -un; printf "PROFILE=%s\\n" "$HOME"; sleep 90 & echo CHILD_PID=$!; wait'
-    body = {'cmd': command, 'label': 'service-account-integration', 'auto_start': True,
+    body = {'cmd': command, 'label': 'service-account-integration', 'auto_start': True,'group_id':'pg-default',
             'run_as': {'mode': 'user', 'username': USER, 'password': PASSWORD}}
     out = api('/processes', body)
     assert out['persisted'] and out['process']['status'] == 'running', out
@@ -134,8 +151,9 @@ try:
     handles.append(close)
     control('stop')
     until(gone)
+    assert ADMIN_PASSWORD.encode() not in (data_dir / 'spawnpoint.db').read_bytes()
     assert PASSWORD.encode() not in (data_dir / 'spawnpoint.db').read_bytes()
-    print('PASS: shipped service installer, real service identity, authenticated target user, descendant termination, encrypted restart/auto-start and service shutdown')
+    print('PASS: access gateway local/OS login, protected setup token, shipped service installer, real service identity, authenticated target user, descendant termination, encrypted restart/auto-start and service shutdown')
 except Exception:
     # Preserve evidence before cleanup; never print the submitted credentials.
     if installed:

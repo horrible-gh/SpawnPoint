@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"spawnpoint/internal/access"
 	"spawnpoint/internal/apispec"
 	"spawnpoint/internal/config"
 	"spawnpoint/internal/dialect"
@@ -89,9 +90,24 @@ func run() int {
 		ValidateAssets:  db.validateAssets,
 		OpenDatabase:    db.open,
 		ApplyMigrations: db.migrate,
-		RestoreEntries:  procs.Restore,
-		CloseDatabase:   db.close,
-		Bind:            front.bind,
+		RestoreEntries: func() (int, error) {
+			n, err := procs.Restore()
+			if err != nil {
+				return n, err
+			}
+			storage, err := db.opened()
+			if err != nil {
+				return n, err
+			}
+			gateway, err := access.New(storage.DB(), procs, api, webui.AccessUI(), cfg.DBPath)
+			if err != nil {
+				return n, err
+			}
+			front.handler = gateway
+			return n, nil
+		},
+		CloseDatabase: db.close,
+		Bind:          front.bind,
 		Serve: func(stop <-chan struct{}) error {
 			// Serve is reached only after a successful bind. Do not launch
 			// children when startup failed (for example, an occupied port).
@@ -263,8 +279,9 @@ func (d *database) close() {
 // is still running, which puts stopAccepting and bind on different threads at
 // the same moment.
 type frontEnd struct {
-	cfg config.Config
-	api *httpapi.Server
+	cfg     config.Config
+	api     *httpapi.Server
+	handler http.Handler
 
 	mu  sync.Mutex
 	ln  net.Listener
@@ -283,6 +300,9 @@ const readHeaderTimeout = 15 * time.Second
 // SpawnPoint is deployed, Go sets nothing, so a port already in use fails here
 // exactly as 0004-NR F3 requires.
 func (f *frontEnd) bind() (string, error) {
+	if f.handler == nil {
+		f.handler = f.api
+	}
 	ln, err := net.Listen("tcp", f.cfg.Address())
 	if err != nil {
 		return "", err
@@ -290,7 +310,7 @@ func (f *frontEnd) bind() (string, error) {
 	f.mu.Lock()
 	f.ln = ln
 	f.srv = &http.Server{
-		Handler:           f.api,
+		Handler:           f.handler,
 		ReadHeaderTimeout: readHeaderTimeout,
 	}
 	f.mu.Unlock()

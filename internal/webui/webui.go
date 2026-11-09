@@ -45,3 +45,9 @@ func Valid() bool {
 	}
 	return strings.Contains(index, "<html") && strings.Contains(index, "</html>")
 }
+
+//go:embed access.html
+var accessIndex string
+
+// AccessUI is the live login, workspace and administration interface.
+func AccessUI() []byte { return []byte(accessIndex) }

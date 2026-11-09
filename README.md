@@ -4,6 +4,13 @@ SpawnPoint is a lightweight service for creating uniquely identified task instan
 
 ![SpawnPoint dashboard](assets/images/SpawnPoint.png)
 
+## 사용자·권한 관리 (feature/access-control)
+
+OS 계정 / SpawnPoint 계정 로그인, 관리자·사용자·그룹·프로세스 권한 관리가 추가되었습니다.
+첫 실행 시 `<SPAWNPOINT_DB_PATH>.setup-token`으로 관리자를 생성하세요. 기존 프로세스/자동 시작은 유지됩니다.
+**기존 무범위 API 토큰은 인증 우회에 사용할 수 없습니다. 연동은 새 사용자·그룹 범위 토큰으로 전환해야 합니다.**
+설정, 권한 모델, 제한 사항 및 업그레이드는 [접근 관리 문서](docs/access-control.md)를 참고하세요.
+
 ## Features
 
 - Validates spawn requests and allocates collision-resistant instance IDs.
