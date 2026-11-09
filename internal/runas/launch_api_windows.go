@@ -25,8 +25,7 @@ type singlePrivilegeSet struct {
 	Attributes uint32
 }
 
-// No rights are enabled or installed here. LocalService already has the
-// impersonation privilege, while an ordinary console account need not have it.
+// Inspect existing rights only; never enable or install privileges.
 func tokenLaunchAvailable() (bool, error) {
 	token, err := syscall.OpenCurrentProcessToken()
 	if err != nil {
@@ -48,30 +47,36 @@ func tokenLaunchAvailable() (bool, error) {
 	return available != 0, nil
 }
 
-// Services need CreateProcessWithTokenW's desktop-access initialization.
-// CreateProcessWithLogonW alone leaves USER32-dependent programs unable to
-// initialize on a service desktop. Select the API BEFORE authenticating; never
-// retry a rejected password, enable privileges, or fall back to another user.
-func startWithCredentials(user, domain, password, app, line []uint16, si *syscall.StartupInfo, pi *syscall.ProcessInformation) (uintptr, error) {
+// Select before authentication. Never retry a rejected credential or fall back
+// to the service identity. The returned cleanup owns the private desktop and
+// the unique logon-session ACL grant until the supervised process exits.
+func startWithCredentials(user, domain, password, app, line []uint16, si *syscall.StartupInfo, pi *syscall.ProcessInformation) (uintptr, func(), error) {
+	noop := func() {}
 	useToken, err := tokenLaunchAvailable()
 	if err != nil {
-		return 0, fmt.Errorf("query process-launch privilege: %w", err)
+		return 0, noop, fmt.Errorf("query process-launch privilege: %w", err)
 	}
-	const flags = 0x00000004 | 0x08000000 | 0x00000400 // suspended, no console, Unicode environment
+	const flags = 0x00000004 | 0x08000000 | 0x00000400
 	if !useToken {
 		r, _, callErr := createWithLogon.Call(ptr(user), ptr(domain), ptr(password), 1, ptr(app), ptr(line), flags, 0, 0, uintptr(unsafe.Pointer(si)), uintptr(unsafe.Pointer(pi)))
-		return r, callErr
+		return r, noop, callErr
 	}
 	var token syscall.Token
-	// INTERACTIVE (2), not NEW_CREDENTIALS: credentials must be checked now.
 	r, _, callErr := logonUser.Call(ptr(user), ptr(domain), ptr(password), 2, 0, uintptr(unsafe.Pointer(&token)))
 	if r == 0 {
-		return 0, callErr
+		return 0, noop, callErr
 	}
 	defer token.Close()
-	// LOGON_WITH_PROFILE. With a nil Desktop Windows grants this authenticated
-	// identity access to the inherited bootstrap desktop. The supervisor then
-	// switches to target-owned private objects before executing user commands.
+	desktop, cleanup, err := prepareLaunchDesktop(token)
+	if err != nil {
+		return 0, noop, fmt.Errorf("prepare authenticated desktop: %w", err)
+	}
+	si.Desktop = &desktop[0]
 	r, _, callErr = createWithToken.Call(uintptr(token), 1, ptr(app), ptr(line), flags, 0, 0, uintptr(unsafe.Pointer(si)), uintptr(unsafe.Pointer(pi)))
-	return r, callErr
+	runtime.KeepAlive(desktop)
+	if r == 0 {
+		cleanup()
+		return 0, noop, callErr
+	}
+	return r, cleanup, nil
 }

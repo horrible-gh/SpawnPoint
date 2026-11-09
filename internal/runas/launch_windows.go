@@ -87,7 +87,7 @@ func launch(s *Spec, password []byte) (*Child, error) {
 	// Explicit standard handles only; passwords never enter the request pipe.
 	si := syscall.StartupInfo{Cb: uint32(unsafe.Sizeof(syscall.StartupInfo{})), Flags: syscall.STARTF_USESTDHANDLES | syscall.STARTF_USESHOWWINDOW, ShowWindow: syscall.SW_HIDE, StdInput: syscall.Handle(requestRead.Fd()), StdOutput: syscall.Handle(outWrite.Fd()), StdErr: syscall.Handle(outWrite.Fd())}
 	var pi syscall.ProcessInformation
-	r, callErr := startWithCredentials(user, domain, pw, app, line, &si, &pi)
+	r, cleanupDesktop, callErr := startWithCredentials(user, domain, pw, app, line, &si, &pi)
 	runtime.KeepAlive(user)
 	runtime.KeepAlive(domain)
 	runtime.KeepAlive(pw)
@@ -119,6 +119,7 @@ func launch(s *Spec, password []byte) (*Child, error) {
 		}
 	}
 	c.wait = func() int {
+		defer cleanupDesktop()
 		defer syscall.CloseHandle(pi.Process)
 		syscall.WaitForSingleObject(pi.Process, syscall.INFINITE)
 		var code uint32
@@ -136,21 +137,12 @@ func childInput() (*os.File, error) {
 	return os.Stdin, nil
 }
 func executeChild(r Request) int {
-	// This is a dedicated target-account process, not the SpawnPoint server.
-	// Keep its desktop setup and CreateProcess on the same OS thread.
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	desktopHandles, err := prepareChildDesktop(r.Nonce)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "execution desktop initialization failed:", err)
-		return 125
-	}
 	systemRoot := os.Getenv("SystemRoot")
 	if systemRoot == "" {
 		systemRoot = `C:\Windows`
 	}
 	shell := systemRoot + `\System32\cmd.exe`
-	cmd := &exec.Cmd{Path: shell, SysProcAttr: &syscall.SysProcAttr{CmdLine: syscall.EscapeArg(shell) + ` /d /s /c "chcp 65001>nul & ` + r.Command + `"`, HideWindow: true, AdditionalInheritedHandles: desktopHandles}}
+	cmd := &exec.Cmd{Path: shell, SysProcAttr: &syscall.SysProcAttr{CmdLine: syscall.EscapeArg(shell) + ` /d /s /c "chcp 65001>nul & ` + r.Command + `"`, HideWindow: true}}
 	if r.Cwd != "" {
 		cmd.Dir = r.Cwd
 	} else {
@@ -183,10 +175,7 @@ func executeChild(r Request) int {
 	}
 	sort.Strings(cmd.Env)
 	// The supervisor was assigned to the parent-owned job before resuming; the
-	// actual shell and its descendants inherit that job at creation.
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	// Check the directory as the target account before declaring readiness.
+	// actual shell and its descendants inherit that job and private desktop.
 	if cmd.Dir != "" {
 		st, e := os.Stat(cmd.Dir)
 		if e != nil || !st.IsDir() {
