@@ -14,7 +14,6 @@ env:
   TZ: Asia/Tokyo
 jobs:
   verify:
-    if: inputs.ref != '' || !contains(github.event.head_commit.message, '[access-transfer]')
     strategy:
       fail-fast: false
       matrix:
@@ -86,13 +85,13 @@ jobs:
       - name: Linux actual server authorization and service lifecycle
         if: runner.os == 'Linux'
         run: |
-          python3 tools/test-access-api.py dist/linux64/spawnpoint
+          python3 tools/test-access-diagnostics.py tools/test-access-api.py dist/linux64/spawnpoint
           python3 tools/test-run-as-service.py dist/linux64/spawnpoint
       - name: Windows actual server authorization and service lifecycle
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          python tools/test-access-api.py dist/win64/spawnpoint.exe
+          python tools/test-access-diagnostics.py tools/test-access-api.py dist/win64/spawnpoint.exe
           if ($LASTEXITCODE -ne 0) { throw 'API integration failed' }
           python tools/test-run-as-service.py dist/win64/spawnpoint.exe
           if ($LASTEXITCODE -ne 0) { throw 'Service integration failed' }
