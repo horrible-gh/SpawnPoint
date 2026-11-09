@@ -1,0 +1,40 @@
+name: Verify access control
+on:
+  push:
+    branches: [feature/access-control]
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  TZ: Asia/Tokyo
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Windows test timezone
+        if: runner.os == 'Windows'
+        run: tzutil /s 'Tokyo Standard Time'
+      - name: Build and regression
+        run: |
+          go build ./...
+          go test ./...
+      - name: Source snapshot
+        if: always() && runner.os == 'Linux'
+        run: git archive --format=zip --output=spawnpoint-source.zip HEAD
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Linux'
+        with:
+          name: access-control-source
+          path: spawnpoint-source.zip
+          retention-days: 7
