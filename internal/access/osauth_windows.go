@@ -30,12 +30,12 @@ func resolveOS(name string) (string, error) {
 	}
 	return "windows:sid:" + u.Uid, nil
 }
-func verifyOS(ctx context.Context, name, password string) (string, error) {
+func authenticateWindows(ctx context.Context, name, password string, logonType uint32) (syscall.Token, error) {
 	if e := ctx.Err(); e != nil {
-		return "", e
+		return 0, e
 	}
 	if name == "" || password == "" || len(password) > 1024 || strings.ContainsAny(name+password, "\x00") {
-		return "", errors.New("invalid credential")
+		return 0, errors.New("invalid credential")
 	}
 	domain := "."
 	if n := strings.Index(name, "\\"); n >= 0 {
@@ -45,11 +45,11 @@ func verifyOS(ctx context.Context, name, password string) (string, error) {
 	}
 	u, e := syscall.UTF16FromString(name)
 	if e != nil {
-		return "", e
+		return 0, e
 	}
 	p, e := syscall.UTF16FromString(password)
 	if e != nil {
-		return "", e
+		return 0, e
 	}
 	defer func() {
 		for i := range p {
@@ -60,17 +60,25 @@ func verifyOS(ctx context.Context, name, password string) (string, error) {
 	if domain != "" {
 		d, e = syscall.UTF16PtrFromString(domain)
 		if e != nil {
-			return "", e
+			return 0, e
 		}
 	}
 	var token syscall.Token
 	// NETWORK validates now; NEW_CREDENTIALS must never be used for authentication.
-	ok, _, _ := authLogonUser.Call(uintptr(unsafe.Pointer(&u[0])), uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(&p[0])), 3, 0, uintptr(unsafe.Pointer(&token)))
+	ok, _, _ := authLogonUser.Call(uintptr(unsafe.Pointer(&u[0])), uintptr(unsafe.Pointer(d)), uintptr(unsafe.Pointer(&p[0])), uintptr(logonType), 0, uintptr(unsafe.Pointer(&token)))
 	runtime.KeepAlive(u)
 	runtime.KeepAlive(d)
 	runtime.KeepAlive(p)
 	if ok == 0 {
-		return "", errors.New("OS authentication failed")
+		return 0, errors.New("OS authentication failed")
+	}
+	return token, nil
+}
+
+func verifyOS(ctx context.Context, name, password string) (string, error) {
+	token, e := authenticateWindows(ctx, name, password, 3)
+	if e != nil {
+		return "", e
 	}
 	defer token.Close()
 	tu, e := token.GetTokenUser()

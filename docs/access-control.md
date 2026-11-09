@@ -7,13 +7,52 @@
 삭제하지 않는다. 기존 프로세스는 `기존 프로세스` 그룹에 관리자 전용으로
 이관한다. 자동 시작은 관리자의 브라우저 로그인과 무관하게 기존대로 동작한다.
 
-첫 접속은 `/login`이며 관리자가 한 명도 없을 때만 초기 설정이 열린다.
-서버가 생성한 `<SPAWNPOINT_DB_PATH>.setup-token` 파일의 일회용 토큰과
-새 관리자 ID/표시 이름/12자 이상 비밀번호를 입력한다. 토큰은 콘솔·로그·API로
-공개하지 않는다. Linux는 서비스 소유의 0600 파일, Windows는 서비스 계정·SYSTEM·
-로컬 Administrators 전용 보호 DACL을 생성 시 적용한다. 최초 계정 생성 후 파일을
-제거한다. 자동 배포는 32~256자의 `SPAWNPOINT_SETUP_TOKEN`을 최초 실행에만
-지정할 수 있다. 환경변수도 자격정보이므로 별도 안전하게 관리한다.
+첫 접속 `/login`에서는 **OS 관리자 인증** 또는 **SpawnPoint 자체 계정**을
+선택한다. 토큰 파일을 직접 찾는 절차는 기본 경로가 아니다.
+
+- Windows: 서버 Administrators 계정과 실제 OS 비밀번호를 확인해 최초 관리자에
+  연결한다. Windows가 발급한 토큰의 활성 관리자 SID를 검사하며 UAC 분리 토큰은
+  연결된 토큰도 확인한다. 임의 헤더/사용자명/그룹 이름만 믿지 않는다.
+- Linux: non-root 서버에서 PAM(`su`) 인증 후 UID 0 또는 **root 셸을 시작할 수 있는
+  sudo 정책**을 확인한다. `sudo -l -u root /bin/sh`의 실제 정책 판정이 필요하고
+  sudo/wheel 그룹명이나 특정 명령 하나의 sudo 허용만으로 관리자를 부여하지 않는다.
+  root 셸은 실제로 실행하지 않는다. 비밀번호는 전용 파이프로만 넘기고 저장하지 않는다.
+- 두 방식 모두 최초 계정이 없는 동안만 가능하며 모든 초기화 경로가 같은 잠금과
+  SQLite revision 조건으로 중복 생성을 차단한다. 기존 계정의 복구/승격 기능이 아니다.
+
+자체 관리자 계정은 **서버가 실행 중일 때** 서버 로컬 터미널에서 만든다.
+Windows는 관리자 권한 PowerShell, Linux는 sudo/root 권한으로 실행한다.
+
+```powershell
+.\spawnpoint.exe setup status
+.\spawnpoint.exe admin init
+.\spawnpoint.exe setup token
+```
+
+```sh
+./spawnpoint setup status
+sudo ./spawnpoint admin init
+sudo ./spawnpoint setup token
+```
+
+`admin init`은 ID/표시 이름/12자 이상 비밀번호를 묻고 비밀번호 입력은 숨긴다.
+`setup status`는 **실행 중인 서버에서 조회한 실제 DB 경로·토큰 위치·초기화 상태**를
+표시하며 토큰 원문은 출력하지 않는다. `setup token`만 OS 관리자에게 원문을 명시적으로
+표시한다. CLI가 다른 작업 폴더에서 실행되어도 DB를 추측하거나 새 DB를 만들지 않는다.
+포트가 다르면 각 명령 뒤에 `--url http://127.0.0.1:포트`를 붙인다. 웹 화면에도 실제
+리스너 포트에 맞춘 명령이 표시된다. 서버 미실행 시 먼저 실행하라는 오류로 종료한다.
+
+자동화는 `admin init --login ID --name NAME --password-stdin`으로 비밀번호 한 줄을
+표준입력에 전달한다. 비밀번호를 명령행 인수에 넣는 옵션은 없다. 관리자 생성 CLI는
+보호된 로컬 토큰으로 서버를 확인하고, 계정 내용에 바인딩된 HMAC으로 요청을 인증한다.
+원문 토큰을 HTTP로 전송하지 않으며 원격 주소/프록시 환경변수/리다이렉트는 거절한다.
+
+기존 토큰 웹 초기화는 자체 계정 탭의 보조 메뉴에 남긴다. 토큰 파일은
+`<SPAWNPOINT_DB_PATH>.setup-token`이며 최초 계정 생성 후 제거한다. 보호된 파일을
+만들지 못해도 OS 관리자 인증은 계속 사용할 수 있고 `setup status`가 오류를 안내한다.
+원격 비로그인 응답에는 DB·토큰 절대 경로 또는 토큰 원문을 공개하지 않는다.
+환경변수 `SPAWNPOINT_SETUP_TOKEN` 방식도 유지한다. 이 경우 CLI에는 같은 환경변수를
+설정해야 하며 파일이 자동 생성되었다고 안내하지 않는다.
 
 접속은 직접 localhost 또는 HTTPS를 사용한다. 동일 호스트의 신뢰하는 TLS
 프록시를 사용하는 경우에만 `SPAWNPOINT_TRUST_LOOPBACK_PROXY=1`을 설정하고,

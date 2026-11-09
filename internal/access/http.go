@@ -73,7 +73,11 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if route == "/auth/login" || route == "/auth/setup" {
+	if route == "/auth/setup-info" {
+		m.setupInfo(w, r)
+		return
+	}
+	if route == "/auth/login" || route == "/auth/setup" || route == "/auth/setup-os" || route == "/auth/setup-cli" {
 		if r.Method != "POST" {
 			fail(w, 405, "POST 요청이 필요합니다")
 			return
@@ -82,7 +86,7 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fail(w, 403, "로그인에는 HTTPS 또는 localhost 접속이 필요합니다")
 			return
 		}
-		m.login(w, r, route == "/auth/setup")
+		m.login(w, r, route != "/auth/login")
 		return
 	}
 	p, authErr := m.principal(r)
@@ -175,7 +179,7 @@ func (m *Manager) me(w http.ResponseWriter, r *http.Request, p Principal) {
 	available, reason := osAvailable()
 	settings := m.state.Settings
 	settings.OSAuto = false
-	send(w, 200, map[string]any{"ok": true, "user": user, "csrf": p.CSRF, "setup_required": len(m.state.Users) == 0, "settings": settings, "runtime": map[string]any{"os": runtime.GOOS, "server": serverName(), "os_login_available": available, "os_login_reason": reason, "sso_available": false, "secure": Secure(r), "https": HTTPS(r)}})
+	send(w, 200, map[string]any{"ok": true, "user": user, "csrf": p.CSRF, "setup_required": len(m.state.Users) == 0, "settings": settings, "runtime": map[string]any{"os": runtime.GOOS, "server": serverName(), "os_login_available": available, "os_login_reason": reason, "sso_available": false, "os_admin_setup_available": available, "local_setup_url": setupLocalURL(r), "secure": Secure(r), "https": HTTPS(r)}})
 }
 func serverName() string {
 	n, e := os.Hostname()
@@ -192,6 +196,8 @@ type loginInput struct {
 	Name       string `json:"name"`
 	SetupToken string `json:"setup_token"`
 	Remember   bool   `json:"remember"`
+	Nonce      string `json:"nonce"`
+	Proof      string `json:"proof"`
 }
 
 func (m *Manager) login(w http.ResponseWriter, r *http.Request, setup bool) {
@@ -221,35 +227,7 @@ func (m *Manager) login(w http.ResponseWriter, r *http.Request, setup bool) {
 		return
 	}
 	if setup {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		if len(m.state.Users) != 0 || !sameSecret(in.SetupToken, m.setupToken) {
-			fail(w, 403, "초기 설정 토큰을 확인하세요")
-			return
-		}
-		hash, e := hashPassword(in.Password)
-		if e != nil {
-			fail(w, 400, e.Error())
-			return
-		}
-		s, _ := cloneState(m.state)
-		u := User{ID: newID("u-"), Login: in.Login, Name: in.Name, Role: "admin", Auth: "local", Status: "active", Groups: []string{}, Hash: hash, Version: 1, Last: "—"}
-		if u.Name == "" {
-			u.Name = u.Login
-		}
-		s.Users = append(s.Users, u)
-		if e = m.commit(s, u.Login, "최초 관리자 생성", u.ID, "로컬 초기 설정 토큰 확인"); e != nil {
-			fail(w, 400, e.Error())
-			return
-		}
-		m.setupToken = ""
-		_ = os.Remove(m.setupPath)
-		p, e := m.issueSession(w, r, u, in.Remember)
-		if e != nil {
-			fail(w, 503, "계정은 생성되었으나 세션 생성에 실패했습니다. 로그인하세요")
-			return
-		}
-		m.me(w, r, p)
+		m.initialAdmin(w, r, in)
 		return
 	}
 	u, e := m.authenticate(r.Context(), in.Method, in.Login, in.Password)

@@ -49,6 +49,9 @@ func main() {
 	if runas.HandleChild() {
 		return
 	}
+	if code, handled := setupCommand(os.Args[1:]); handled {
+		os.Exit(code)
+	}
 	os.Exit(run())
 }
 

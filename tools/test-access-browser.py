@@ -72,6 +72,13 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
                 page.set_content(urllib.request.urlopen(base).read().decode())
             else:
                 page.goto(base)
+            expect(page.locator('#setupOSForm')).to_be_visible()
+            check(page.locator('#setupToken').count() == 0, 'initial page no longer requires a token')
+            page.screenshot(path=str(artifacts/'setup-os-desktop.png'), full_page=True)
+            page.locator('[data-act="setup-mode"][data-mode="local"]').click()
+            expect(page.get_by_text('토큰 파일을 찾을 필요가 없습니다.', exact=False)).to_be_visible()
+            page.screenshot(path=str(artifacts/'setup-cli-desktop.png'), full_page=True)
+            page.locator('#tokenSetup > summary').click()
             expect(page.locator('#setupForm')).to_be_visible()
             for name,value in {'setup_token':token,'login':'admin','name':'관리자','password':password,'repeat':password}.items():
                 page.locator(f'#setupForm [name="{name}"]').fill(value)

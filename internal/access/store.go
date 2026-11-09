@@ -47,7 +47,7 @@ func cloneState(s State) (State, error) {
 
 // New is called after migration and runner restore, but before binding HTTP.
 func New(db *sql.DB, r Runner, next http.Handler, ui []byte, dbPath string) (*Manager, error) {
-	m := &Manager{db: db, runner: r, next: next, ui: ui, authSlots: make(chan struct{}, 4), now: time.Now, verifyOS: verifyOS, resolveOS: resolveOS, setupPath: dbPath + ".setup-token"}
+	m := &Manager{db: db, runner: r, next: next, ui: ui, authSlots: make(chan struct{}, 4), now: time.Now, verifyOS: verifyOS, verifyAdmin: verifyOSAdmin, resolveOS: resolveOS, setupPath: dbPath + ".setup-token"}
 	var raw string
 	err := db.QueryRow("SELECT revision,document FROM access_state WHERE id=1").Scan(&m.revision, &raw)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -73,7 +73,8 @@ func New(db *sql.DB, r Runner, next http.Handler, ui []byte, dbPath string) (*Ma
 	}
 	if len(m.state.Users) == 0 {
 		if err = m.loadSetupToken(); err != nil {
-			return nil, err
+			// OS-admin bootstrap remains usable if the optional token file cannot be created.
+			m.setupError = err.Error()
 		}
 	}
 	nextState, _ := cloneState(m.state)

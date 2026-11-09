@@ -112,20 +112,22 @@ type identityRunner interface {
 	RegisterIdentity(string, string, *string, map[string]string, runas.Input, bool, ...bool) (runner.Info, bool, error)
 }
 type Manager struct {
-	mu         sync.RWMutex
-	rateMu     sync.Mutex
-	db         *sql.DB
-	runner     Runner
-	next       http.Handler
-	ui         []byte
-	state      State
-	revision   int64
-	setupToken string
-	setupPath  string
-	authSlots  chan struct{}
-	now        func() time.Time
-	verifyOS   func(context.Context, string, string) (string, error)
-	resolveOS  func(string) (string, error)
+	mu          sync.RWMutex
+	rateMu      sync.Mutex
+	db          *sql.DB
+	runner      Runner
+	next        http.Handler
+	ui          []byte
+	state       State
+	revision    int64
+	setupToken  string
+	setupPath   string
+	setupError  string
+	verifyAdmin func(context.Context, string, string) (string, error)
+	authSlots   chan struct{}
+	now         func() time.Time
+	verifyOS    func(context.Context, string, string) (string, error)
+	resolveOS   func(string) (string, error)
 }
 type contextKey struct{}
 
