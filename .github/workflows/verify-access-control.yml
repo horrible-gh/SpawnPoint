@@ -3,12 +3,18 @@ on:
   push:
     branches: [feature/access-control]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: false
 permissions:
   contents: read
 env:
   TZ: Asia/Tokyo
 jobs:
   verify:
+    if: inputs.ref != '' || !contains(github.event.head_commit.message, '[access-transfer]')
     strategy:
       fail-fast: false
       matrix:
@@ -18,17 +24,87 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.ref || github.sha }}
           persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Windows test timezone
+          cache: true
+      - name: Windows timezone and Secondary Logon
         if: runner.os == 'Windows'
-        run: tzutil /s 'Tokyo Standard Time'
+        shell: pwsh
+        run: |
+          tzutil /s 'Tokyo Standard Time'
+          Set-Service seclogon -StartupType Manual
+          Start-Service seclogon
       - name: Build and regression
+        shell: bash
         run: |
           go build ./...
           go test ./...
+          node tools/test-autostart-ui.cjs
+          SPAWNPOINT_LIVE_SPAWN=1 go test ./internal/runner -run AutoStart -count=1 -timeout=2m
+      - name: Linux packaging and race checks
+        if: runner.os == 'Linux'
+        run: |
+          sh tools/dist.sh
+          go test -race ./internal/access ./internal/httpapi ./internal/runner ./internal/store
+      - name: Windows packaging
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File .\tools\dist.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
+      - name: Isolated Linux test identity
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          password="Sp!$(openssl rand -hex 18)aA4"
+          echo "::add-mask::$password"
+          sudo useradd -m -s /bin/sh spauthtarget
+          printf '%s:%s\n' spauthtarget "$password" | sudo chpasswd
+          chmod o+x "$HOME" "$HOME/work" "$GITHUB_WORKSPACE/.." "$GITHUB_WORKSPACE"
+          echo "SPAWNPOINT_AUTH_TEST_USER=spauthtarget" >> "$GITHUB_ENV"
+          echo "SPAWNPOINT_AUTH_TEST_PASSWORD=$password" >> "$GITHUB_ENV"
+          echo "SPAWNPOINT_RUNAS_TEST_USER=spauthtarget" >> "$GITHUB_ENV"
+          echo "SPAWNPOINT_RUNAS_TEST_PASSWORD=$password" >> "$GITHUB_ENV"
+      - name: Isolated Windows test identity
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $password = 'Sp!' + [guid]::NewGuid().ToString('N') + 'aA4'
+          Write-Output "::add-mask::$password"
+          New-LocalUser -Name spauthtarget -Password (ConvertTo-SecureString $password -AsPlainText -Force) -AccountNeverExpires | Out-Null
+          Add-LocalGroupMember -SID 'S-1-5-32-545' -Member spauthtarget
+          "SPAWNPOINT_AUTH_TEST_USER=spauthtarget" >> $env:GITHUB_ENV
+          "SPAWNPOINT_AUTH_TEST_PASSWORD=$password" >> $env:GITHUB_ENV
+          "SPAWNPOINT_RUNAS_TEST_USER=spauthtarget" >> $env:GITHUB_ENV
+          "SPAWNPOINT_RUNAS_TEST_PASSWORD=$password" >> $env:GITHUB_ENV
+      - name: Native OS authentication
+        shell: bash
+        run: go test ./internal/access -run TestLiveOSLogin -count=1 -v -timeout=2m
+      - name: Linux actual server authorization and service lifecycle
+        if: runner.os == 'Linux'
+        run: |
+          python3 tools/test-access-api.py dist/linux64/spawnpoint
+          python3 tools/test-run-as-service.py dist/linux64/spawnpoint
+      - name: Windows actual server authorization and service lifecycle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python tools/test-access-api.py dist/win64/spawnpoint.exe
+          if ($LASTEXITCODE -ne 0) { throw 'API integration failed' }
+          python tools/test-run-as-service.py dist/win64/spawnpoint.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Service integration failed' }
+      - name: Real browser HTTP, sessions and approved UI
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m pip install playwright==1.57.0
+          python3 -m playwright install --with-deps chromium
+          python3 tools/test-access-browser.py dist/linux64/spawnpoint
+      - name: Formatting
+        shell: bash
+        run: test -z "$(git ls-files '*.go' | xargs gofmt -l)"
       - name: Source snapshot
         if: always() && runner.os == 'Linux'
         run: git archive --format=zip --output=spawnpoint-source.zip HEAD
@@ -37,4 +113,11 @@ jobs:
         with:
           name: access-control-source
           path: spawnpoint-source.zip
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Linux'
+        with:
+          name: access-control-browser-evidence
+          path: artifacts/*.png
+          if-no-files-found: ignore
           retention-days: 7
