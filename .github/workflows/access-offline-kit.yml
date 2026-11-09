@@ -1,0 +1,28 @@
+name: Access-control offline build kit
+on:
+  push:
+    branches: [feature/access-control]
+    paths: ['.github/workflows/access-offline-kit.yml']
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: |
+          go mod vendor
+          mkdir kit
+          tar -czf kit/go-toolchain.tar.gz -C "$(go env GOROOT)" .
+          tar -czf kit/vendor.tar.gz vendor
+      - uses: actions/upload-artifact@v4
+        with:
+          name: access-offline-kit
+          path: kit/*
+          retention-days: 1
