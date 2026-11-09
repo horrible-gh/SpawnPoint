@@ -1,0 +1,133 @@
+name: Verify execution accounts and editor
+on:
+  push:
+    branches: [main, verify/run-as-editor-20261109]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+env:
+  TZ: Asia/Tokyo
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - id: source
+        shell: bash
+        run: |
+          if test -f tools/prepare_runas.py; then
+            test "$GITHUB_REF" = 'refs/heads/verify/run-as-editor-20261109'
+            python3 tools/prepare_runas.py
+            git ls-files --cached --others --exclude-standard '*.go' | xargs gofmt -w
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -A
+            git commit -m 'Implement authenticated execution accounts and approved command editor'
+            git push origin HEAD:verify/run-as-editor-20261109
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  verify:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Windows timezone and Secondary Logon
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          tzutil /s 'Tokyo Standard Time'
+          Set-Service seclogon -StartupType Manual
+          Start-Service seclogon
+      - name: Build and unit regression
+        shell: bash
+        run: |
+          go build ./...
+          go test ./...
+      - name: Existing automatic-start and form regression
+        shell: bash
+        env:
+          SPAWNPOINT_LIVE_SPAWN: '1'
+        run: |
+          go test ./internal/runner -run AutoStart -count=1 -timeout=2m
+          node tools/test-autostart-ui.cjs
+      - name: Linux packaging and race checks
+        if: runner.os == 'Linux'
+        run: |
+          sh -n tools/dist.sh tools/install-service.sh
+          sh tools/dist.sh
+          go test -race ./internal/runas ./internal/runner ./internal/httpapi ./internal/store
+      - name: Windows packaging
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File .\tools\dist.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
+      - name: Create ephemeral Linux test identity
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          password="Sp!$(openssl rand -hex 18)aA4"
+          echo "::add-mask::$password"
+          sudo useradd -m -s /bin/sh sptesttarget
+          printf '%s:%s\n' sptesttarget "$password" | sudo chpasswd
+          chmod o+x "$HOME" "$HOME/work" "$GITHUB_WORKSPACE/.." "$GITHUB_WORKSPACE"
+          echo "SPAWNPOINT_RUNAS_TEST_USER=sptesttarget" >> "$GITHUB_ENV"
+          echo "SPAWNPOINT_RUNAS_TEST_PASSWORD=$password" >> "$GITHUB_ENV"
+      - name: Create ephemeral Windows test identity
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $password = 'Sp!' + [guid]::NewGuid().ToString('N') + 'aA4'
+          Write-Output "::add-mask::$password"
+          New-LocalUser -Name sptesttarget -Password (ConvertTo-SecureString $password -AsPlainText -Force) -AccountNeverExpires | Out-Null
+          Add-LocalGroupMember -SID 'S-1-5-32-545' -Member sptesttarget
+          "SPAWNPOINT_RUNAS_TEST_USER=sptesttarget" >> $env:GITHUB_ENV
+          "SPAWNPOINT_RUNAS_TEST_PASSWORD=$password" >> $env:GITHUB_ENV
+      - name: Native account execution
+        shell: bash
+        run: |
+          go test -c ./internal/runas -o runas-live.test.exe
+          ./runas-live.test.exe -test.run TestLive -test.v -test.timeout 2m
+      - name: Linux real server and SQLite restore
+        if: runner.os == 'Linux'
+        run: python3 tools/test-run-as-server.py dist/linux64/spawnpoint
+      - name: Windows real server and SQLite restore
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: python tools/test-run-as-server.py dist/win64/spawnpoint.exe
+      - name: Browser verification of approved editor
+        if: runner.os == 'Linux'
+        run: |
+          npm install --prefix /tmp/spawnpoint-browser playwright
+          /tmp/spawnpoint-browser/node_modules/.bin/playwright install --with-deps chromium
+          NODE_PATH=/tmp/spawnpoint-browser/node_modules node tools/test-run-as-browser.cjs dist/linux64/spawnpoint
+      - name: Publish verification screenshots
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-account-editor-screenshots
+          path: artifacts/*.png
+          if-no-files-found: ignore
+      - name: Formatting
+        shell: bash
+        run: test -z "$(git ls-files '*.go' | xargs gofmt -l)"
