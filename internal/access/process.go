@@ -352,7 +352,7 @@ func (m *Manager) createProcess(w http.ResponseWriter, r *http.Request, p Princi
 	if start {
 		info, _ = m.runner.Run(info.ID)
 	}
-	send(w, 200, map[string]any{"ok": true, "persisted": true, "process": map[string]any{"id": info.ID, "status": info.Status, "error": info.Error}})
+	m.sendCreatedProcess(w, r, p, info.ID)
 }
 func (m *Manager) editProcess(w http.ResponseWriter, r *http.Request, p Principal, id string) {
 	in, identity, e := commandBody(w, r)
