@@ -5,7 +5,7 @@ package access
 import (
 	"context"
 	"errors"
-	"os/user"
+	"os"
 	"runtime"
 	"strings"
 	"syscall"
@@ -24,11 +24,35 @@ func resolveOS(name string) (string, error) {
 	if name == "" || len(name) > 256 || strings.ContainsAny(name, "\r\n\x00") {
 		return "", errors.New("invalid OS username")
 	}
-	u, e := user.Lookup(name)
+	// Account linking needs only the stable SID. os/user.Lookup also queries
+	// profile and primary-group information, which may be unavailable to a
+	// LocalService process even when the account itself exists.
+	// Match authenticateWindows: an unqualified name or .\name is local to
+	// this server, not a same-named account in a trusted domain.
+	lookup := name
+	if strings.HasPrefix(name, `.\`) || (!strings.Contains(name, `\`) && !strings.Contains(name, "@")) {
+		host, e := os.Hostname()
+		if e != nil || host == "" {
+			return "", errors.New("cannot determine local Windows account domain")
+		}
+		if strings.HasPrefix(name, `.\`) {
+			lookup = host + name[1:]
+		} else {
+			lookup = host + `\` + name
+		}
+	}
+	sid, _, kind, e := syscall.LookupSID("", lookup)
 	if e != nil {
 		return "", e
 	}
-	return "windows:sid:" + u.Uid, nil
+	if kind != syscall.SidTypeUser {
+		return "", errors.New("OS account is not a user")
+	}
+	value, e := sid.String()
+	if e != nil {
+		return "", e
+	}
+	return "windows:sid:" + value, nil
 }
 func authenticateWindows(ctx context.Context, name, password string, logonType uint32) (syscall.Token, error) {
 	if e := ctx.Err(); e != nil {

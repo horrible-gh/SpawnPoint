@@ -126,9 +126,12 @@ try:
     # Provision and authenticate the OS account while the server actually runs
     # as LocalService/systemd, without changing the process execution identity.
     state=api('/api/access/state')
-    api('/api/access/admin',{'action':'user.upsert','revision':state['revision'],'user':{'name':'Native account','auth':'os','external':USER,'role':'viewer','status':'active','groups':[]}})
-    native=api('/auth/login',{'method':'os','login':USER,'password':PASSWORD})
-    assert native['user']['auth']=='os' and native['user']['external']==USER and native['user']['id'], 'OS link without a separate login authenticates through service'
+    # The GUI explicitly documents .\username for Windows local accounts.
+    # Exercise it while the API really runs as LocalService, not runneradmin.
+    linked_identity = '.\\' + USER if WIN else USER
+    api('/api/access/admin',{'action':'user.upsert','revision':state['revision'],'user':{'name':'Native account','auth':'os','external':linked_identity,'role':'viewer','status':'active','groups':[]}})
+    native=api('/auth/login',{'method':'os','login':linked_identity,'password':PASSWORD})
+    assert native['user']['auth']=='os' and native['user']['external']==linked_identity and native['user']['id'], 'OS link without a separate login authenticates through service'
     result=api('/auth/login',{'method':'local','login':'service-admin','password':ADMIN_PASSWORD})
     CSRF=result['csrf']
     runtime = api('/runtime')
