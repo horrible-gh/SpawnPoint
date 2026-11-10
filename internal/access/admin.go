@@ -116,7 +116,7 @@ func validateState(s *State) error {
 	validateRules := func(rs map[string]Grant, process bool) error {
 		for key, r := range rs {
 			known := strings.HasPrefix(key, "u:") && userIDs[strings.TrimPrefix(key, "u:")] || strings.HasPrefix(key, "g:") && groups[strings.TrimPrefix(key, "g:")]
-			if !known || r.Level < 0 || r.Level > 3 || r.Create && (process || r.Level == 0) {
+			if !known || r.Level < 0 || r.Level > 3 || r.Create && (process || r.Level == 0) || r.Remove && r.Level == 0 {
 				return errors.New("권한 대상 또는 허용 범위를 확인하세요")
 			}
 		}
@@ -532,9 +532,9 @@ func (m *Manager) impact(before, after *State) map[string]any {
 			now := evaluate(after, &u, p.ID, p.RunAs != nil)
 			up := ""
 			down := ""
-			names := []string{"조회", "로그", "실행", "편집", "생성"}
-			a := []bool{old.View, old.Logs, old.Run, old.Edit, old.Create}
-			b := []bool{now.View, now.Logs, now.Run, now.Edit, now.Create}
+			names := []string{"조회", "로그", "실행", "편집", "생성", "삭제"}
+			a := []bool{old.View, old.Logs, old.Run, old.Edit, old.Create, old.Remove}
+			b := []bool{now.View, now.Logs, now.Run, now.Edit, now.Create, now.Remove}
 			for i := range a {
 				if !a[i] && b[i] {
 					up += names[i] + " "

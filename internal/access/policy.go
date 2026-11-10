@@ -8,7 +8,7 @@ func groupGrant(u *User, g *ProcessGroup, overrides map[string]Grant) (Grant, st
 		return Grant{}, "기본 거부"
 	}
 	if admin(u) {
-		return Grant{3, true}, "관리자 전체 권한"
+		return Grant{Level: 3, Create: true, Remove: true}, "관리자 전체 권한"
 	}
 	rules := map[string]Grant{}
 	for k, v := range g.Rules {
@@ -32,6 +32,7 @@ func groupGrant(u *User, g *ProcessGroup, overrides map[string]Grant) (Grant, st
 					out.Level = r.Level
 				}
 				out.Create = out.Create || r.Create
+				out.Remove = out.Remove || r.Remove
 				source = "사용자 그룹 상속"
 			}
 		}
@@ -39,7 +40,8 @@ func groupGrant(u *User, g *ProcessGroup, overrides map[string]Grant) (Grant, st
 	if u.Role == "viewer" && out.Level > 1 {
 		out.Level = 1
 	}
-	out.Create = out.Create && out.Level > 0 && u.Role == "developer"
+	out.Create = out.Create && out.Level > 0 && (u.Role == "developer" || u.Role == "manager")
+	out.Remove = out.Remove && out.Level > 0 && u.Role == "manager"
 	return out, source
 }
 func evaluate(s *State, u *User, id string, specificAccount bool) Capabilities {
@@ -66,7 +68,7 @@ func evaluate(s *State, u *User, id string, specificAccount bool) Capabilities {
 	base, _ := groupGrant(u, g, nil)
 	// A saved execution credential is always protected, independent of the UI
 	// checkbox. Editing a command is delegation of the execution account itself.
-	return Capabilities{Level: grant.Level, Raw: grant.Level, View: grant.Level >= 1, Logs: grant.Level >= 1, Run: grant.Level >= 2, Edit: grant.Level >= 3 && !p.Protected && !specificAccount, Create: base.Create, Source: source}
+	return Capabilities{Level: grant.Level, Raw: grant.Level, View: grant.Level >= 1, Logs: grant.Level >= 1, Run: grant.Level >= 2, Edit: grant.Level >= 3 && !p.Protected && !specificAccount, Create: base.Create, Remove: grant.Remove && !p.Protected && !specificAccount, Source: source}
 }
 func (m *Manager) capabilities(p Principal, id string, specific bool) Capabilities {
 	c := evaluate(&m.state, m.state.user(p.UserID), id, specific)
@@ -94,7 +96,7 @@ func (m *Manager) mayCreate(p Principal, gid string) bool {
 	grant, _ := groupGrant(u, g, nil)
 	yes := admin(u) || grant.Create
 	if p.Token != nil {
-		yes = yes && p.Token.Scope == gid && p.Token.Create && p.Token.Level >= 3 && (u.Role == "developer" || u.Role == "admin")
+		yes = yes && p.Token.Scope == gid && p.Token.Create && p.Token.Level >= 3 && (u.Role == "developer" || u.Role == "manager" || u.Role == "admin")
 	}
 	return yes
 }

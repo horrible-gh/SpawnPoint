@@ -104,7 +104,7 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-access-') as work:
         anon.call('/auth/login', {'method': 'local', 'login': 'admin', 'password': password}, expected=403, headers={'Host': 'untrusted.invalid'})
         anon.call('/auth/login', {'method': 'local', 'login': 'admin', 'password': password}, expected=403, headers={'Host': 'untrusted.invalid', 'X-Forwarded-Proto': 'https', 'X-Remote-User': 'admin'})
         users = {}
-        for role in ['viewer', 'reference', 'developer']:
+        for role in ['viewer', 'reference', 'developer', 'manager']:
             admin.admin('user.upsert', user={'login': role, 'name': role, 'role': role, 'auth': 'local', 'status': 'active', 'groups': [], 'password': password})
             users[role] = next(u for u in admin.state()['db']['users'] if u['login'] == role)['id']
         admin.admin('user-group.upsert', name='team', desc='test group', members=list(users.values()))
@@ -117,7 +117,7 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-access-') as work:
         clients = {}
         for role in users:
             c = Client(base); c.login(role, password); clients[role] = c
-        viewer, ref, dev = clients['viewer'], clients['reference'], clients['developer']
+        viewer, ref, dev, manager = clients['viewer'], clients['reference'], clients['developer'], clients['manager']
         cmd = 'echo access-test & ping -n 40 127.0.0.1 >nul' if os.name == 'nt' else 'printf access-test; sleep 40'
         public = admin.call('/processes', {'cmd': cmd, 'label': 'allowed-process', 'group_id': pg, 'start': False, 'env': {'SECRET_TEST': 'hidden-value'}})['process']['id']
         private = admin.call('/processes', {'cmd': 'echo private', 'label': 'private-process', 'group_id': hidden, 'start': False})['process']['id']
@@ -157,6 +157,56 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-access-') as work:
         admin.call('/api/access/admin', {'action': 'policy', 'revision': before['revision'], 'target': 'group', 'id': pg, 'rules': {}}, expected=409)
         admin.admin('bulk', ids=[public], destination=pg, clear=True)
         ref.call('/processes/' + public)
+        # Manager lifecycle permissions are independent and limited to granted groups.
+        manager.call('/processes', {'cmd':'echo outside','start':False,'group_id':hidden}, expected=403)
+        check(not manager.call('/processes/'+public)['process']['capabilities']['remove'], 'legacy group grant does not grant deletion')
+        manager.call('/processes/'+public, {}, 'DELETE', expected=403)
+        manager_worker=manager.call('/processes', {'cmd':cmd,'label':'manager-worker','start':False,'group_id':pg})['process']['id']
+        for action, payload in [('policy',{'target':'group','id':pg,'rules':{}}), ('user.upsert',{'user':{'role':'admin'}}), ('process.meta',{'id':manager_worker,'protected':False}), ('bulk',{'ids':[manager_worker],'destination':hidden})]:
+            manager.call('/api/access/admin', {'action':action,'revision':admin.state()['revision'],**payload}, expected=403)
+        manager.call('/processes/'+manager_worker, {'cmd':'echo move','group_id':hidden,'revision':admin.state()['revision']}, 'PUT', expected=403)
+        manager.call('/processes', {'cmd':'echo privilege','start':False,'group_id':pg,'run_as':{'mode':'service'}}, expected=403)
+        allowed_rules={'g:'+ug:{'level':3,'create':True,'remove':True}}
+        preview=admin.call('/api/access/preview',{'action':'policy','target':'group','id':pg,'revision':admin.state()['revision'],'rules':allowed_rules})
+        check(any('삭제' in row['gained'] for row in preview['impact']['rows']), 'delete grants appear in policy impact')
+        admin.admin('policy',target='group',id=pg,rules=allowed_rules)
+        check(manager.call('/processes/'+manager_worker)['process']['capabilities']['remove'], 'manager deletion requires group opt-in')
+        for c in [viewer, ref, dev]:
+            check(not c.call('/processes/'+manager_worker)['process']['capabilities']['remove'], 'lower role cannot gain deletion from group')
+            c.call('/processes/'+manager_worker, {}, 'DELETE', expected=403)
+        manager.call('/processes/'+manager_worker, {}, 'DELETE', expected=403, csrf=False)
+        manager.call('/processes/'+manager_worker, {}, 'DELETE', expected=403, headers={'Origin':'https://evil.invalid'})
+        admin.admin('policy',target='process',id=manager_worker,rules={'u:'+users['manager']:{'level':3,'remove':False}})
+        manager.call('/processes/'+manager_worker, {}, 'DELETE', expected=403)
+        admin.admin('policy',target='process',id=manager_worker,rules={})
+        admin.admin('process.meta',id=manager_worker,protected=True)
+        manager.call('/processes/'+manager_worker, {}, 'DELETE', expected=403)
+        manager.call('/processes/'+manager_worker, {'cmd':cmd,'protected':False}, 'PUT', expected=403)
+        admin.admin('process.meta',id=manager_worker,protected=False)
+        admin.admin('bulk',ids=[manager_worker],destination=hidden,clear=False)
+        manager.call('/processes/'+manager_worker, {}, 'DELETE', expected=404)
+        admin.admin('bulk',ids=[manager_worker],destination=pg,clear=False)
+        expiry_manager=time.strftime('%Y-%m-%d',time.gmtime(time.time()+86400))
+        manager_token=admin.admin('token.create',name='manager integration',owner=users['manager'],scope=pg,level=3,create=True,expiry=expiry_manager)['secret']
+        manager_api=Client(base);manager_api.bearer=manager_token
+        manager_api.call('/processes/'+manager_worker, {}, 'DELETE', expected=403)
+        manager_created=manager_api.call('/processes',{'cmd':'echo scoped','start':False,'group_id':pg})['process']['id']
+        manager.call('/processes/'+manager_created, {}, 'DELETE')
+        manager.call('/processes/'+manager_worker+'/run',{})
+        wait_for(lambda:'access-test' in manager.call('/processes/'+manager_worker+'/logs').get('text',''))
+        manager.call('/processes/'+manager_worker, {}, 'DELETE')
+        admin.call('/processes/'+manager_worker,expected=404)
+        check(any(a['action']=='프로세스 삭제' and a['actor']=='manager' for a in admin.state()['db']['audit']), 'manager deletion is audited')
+        # Removing a grant changes authorization immediately, without needing logout.
+        admin.admin('policy',target='group',id=pg,rules={'g:'+ug:{'level':3,'create':True}})
+        manager.call('/processes/'+public,{},'DELETE',expected=403)
+        manager_input=next(u for u in admin.state()['db']['users'] if u['id']==users['manager'])
+        manager_input={k:manager_input[k] for k in ['id','login','name','role','auth','status','external','groups']}
+        admin.admin('user.upsert',user={**manager_input,'role':'developer'})
+        manager.call('/processes',expected=401)
+        manager_api.call('/processes',expected=401)
+        admin.admin('user.upsert',user=manager_input)
+        manager.login('manager',password)
         # A single process may move directly from the editor with a reviewed
         # revision; all policy and ownership boundaries are still server-side.
         moved = admin.call('/processes', {'cmd': 'echo before-move', 'label': 'editor-move', 'group_id': pg, 'start': False, 'env': {'KEEP': 'a,b=c'}, 'auto_start': False})['process']['id']
@@ -165,7 +215,7 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-access-') as work:
         admin.admin('process.meta', id=moved, protected=False, public=False)
         move = {'cmd': 'echo after-move', 'label': 'editor-moved', 'group_id': hidden, 'env': {'KEEP': 'a,b=c'}, 'auto_start': False}
         rev = admin.state()['revision']
-        for c in [viewer, ref, dev]:
+        for c in [viewer, ref, dev, manager]:
             c.call('/processes/' + moved, {**move, 'revision': rev}, 'PUT', expected=403)
         admin.call('/processes/' + moved, move, 'PUT', expected=409)
         admin.call('/processes/' + moved, {**move, 'revision': rev-1}, 'PUT', expected=409)
@@ -257,6 +307,9 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-access-') as work:
             check(execution['process']['status'] != 'failed', 'native run-as still launches behind the access gateway')
             eid = execution['process']['id']
             wait_for(lambda: os_user.lower() in admin.call('/processes/' + eid + '/logs').get('text', '').lower())
+            admin.admin('policy',target='group',id=pg,rules=allowed_rules)
+            manager.call('/processes/'+eid,{},'DELETE',expected=403)
+            check(not manager.call('/processes/'+eid)['process']['capabilities']['remove'],'saved OS identity is protected from manager deletion')
             check(os_password.encode() not in (root / 'test.db').read_bytes(), 'OS password not persisted as plaintext')
         # Audit/state must never expose local hashes, raw tokens or submitted passwords.
         snapshot = admin.state()

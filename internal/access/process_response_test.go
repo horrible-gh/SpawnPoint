@@ -11,7 +11,7 @@ import (
 func TestCreatedProcessUsesCanonicalResponseAndRedaction(t *testing.T) {
 	for _, role := range []string{"developer", "viewer"} {
 		s := fixturePolicy()
-		s.ProcessGroups[0].Rules = map[string]Grant{"g:dev": {3, true}}
+		s.ProcessGroups[0].Rules = map[string]Grant{"g:dev": {Level: 3, Create: true}}
 		m := &Manager{state: s, next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != "GET" || r.URL.Path != "/processes/p" || r.URL.RawQuery != "" || r.ContentLength != 0 || !Managed(r) {
 				t.Errorf("incorrect canonical read: %s %s", r.Method, r.URL)

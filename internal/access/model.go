@@ -35,6 +35,7 @@ type UserGroup struct {
 type Grant struct {
 	Level  int  `json:"level"`
 	Create bool `json:"create"`
+	Remove bool `json:"remove,omitempty"` // additive; absent in older saved policies means false
 }
 type ProcessGroup struct {
 	ID    string           `json:"id"`
@@ -169,7 +170,7 @@ func (s *State) meta(id string) ProcessMeta {
 func active(u *User) bool { return u != nil && u.Status == "active" }
 func admin(u *User) bool  { return active(u) && u.Role == "admin" }
 func validRole(role string) bool {
-	return role == "admin" || role == "developer" || role == "reference" || role == "viewer"
+	return role == "admin" || role == "manager" || role == "developer" || role == "reference" || role == "viewer"
 }
 func contains(xs []string, s string) bool {
 	for _, x := range xs {

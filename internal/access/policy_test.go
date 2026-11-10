@@ -22,7 +22,7 @@ func TestRolePermissionMatrix(t *testing.T) {
 				for _, identity := range []bool{false, true} {
 					t.Run(fmt.Sprintf("%s/%d/protect=%t/identity=%t", role, level, protect, identity), func(t *testing.T) {
 						s := fixturePolicy()
-						s.ProcessGroups[0].Rules = map[string]Grant{"g:dev": {level, true}}
+						s.ProcessGroups[0].Rules = map[string]Grant{"g:dev": {Level: level, Create: true}}
 						p := s.Processes["p"]
 						p.Protected = protect
 						s.Processes["p"] = p
@@ -53,18 +53,18 @@ func TestRolePermissionMatrix(t *testing.T) {
 func TestInheritanceExceptionsAndDeny(t *testing.T) {
 	s := fixturePolicy()
 	g := &s.ProcessGroups[0]
-	g.Rules = map[string]Grant{"g:dev": {3, true}, "g:deny": {0, false}}
+	g.Rules = map[string]Grant{"g:dev": {Level: 3, Create: true}, "g:deny": {Level: 0}}
 	u := s.user("developer")
 	u.Groups = append(u.Groups, "deny")
 	if evaluate(&s, u, "p", false).View {
 		t.Fatal("group deny lost")
 	}
-	g.Rules["u:developer"] = Grant{2, false}
+	g.Rules["u:developer"] = Grant{Level: 2}
 	if !evaluate(&s, u, "p", false).Run {
 		t.Fatal("direct grant precedence")
 	}
 	p := s.Processes["p"]
-	p.Overrides = map[string]Grant{"u:developer": {0, false}}
+	p.Overrides = map[string]Grant{"u:developer": {Level: 0}}
 	s.Processes["p"] = p
 	if evaluate(&s, u, "p", false).View {
 		t.Fatal("process deny lost")
@@ -146,7 +146,7 @@ func TestStateRejectsLastAdminAndInvalidRules(t *testing.T) {
 		t.Fatal("last admin disabled")
 	}
 	s.user("admin").Status = "active"
-	s.ProcessGroups[0].Rules["u:missing"] = Grant{3, true}
+	s.ProcessGroups[0].Rules["u:missing"] = Grant{Level: 3, Create: true}
 	if e := validateState(&s); e == nil {
 		t.Fatal("unknown subject allowed")
 	}

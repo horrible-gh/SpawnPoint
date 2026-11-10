@@ -465,7 +465,24 @@ func (m *Manager) deleteProcess(w http.ResponseWriter, r *http.Request, p Princi
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	u := m.currentPrincipal(p)
-	if !admin(u) || p.Token != nil {
+	// Deletion is a distinct grant, not a consequence of edit permission.
+	// Re-evaluate the current session, group/exception policy and protection
+	// before delegating any stop, file deletion or persistence operation.
+	if u == nil || p.Token != nil {
+		m.deny(w, p, id, 403)
+		return
+	}
+	info, ok := m.runner.Get(id)
+	if !ok {
+		fail(w, 404, "프로세스가 없습니다")
+		return
+	}
+	cap := m.capabilities(p, id, info.RunAs != nil)
+	if !cap.View {
+		m.deny(w, p, id, 404)
+		return
+	}
+	if !cap.Remove {
 		m.deny(w, p, id, 403)
 		return
 	}

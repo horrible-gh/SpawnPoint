@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -167,6 +168,14 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
             expect(page.locator('tbody')).to_contain_text('브라우저 개발자')
             check(True,'user created through form')
             uid = next(u['id'] for u in api_state()['db']['users'] if u['login']=='developer')
+            # Provision the new role through the same real user-management form.
+            page.locator('[data-act="add-user"]').click()
+            page.locator('#userName').fill('브라우저 매니저')
+            page.locator('#userLogin').fill('manager')
+            page.locator('#editRole').select_option('manager')
+            page.locator('#userTempPassword').fill(password)
+            save_modal()
+            manager_id=next(u['id'] for u in api_state()['db']['users'] if u['login']=='manager')
             # OS links use one identity field, not a second application login.
             os_user = os.environ.get('SPAWNPOINT_AUTH_TEST_USER') or getpass.getuser()
             sent_users = []
@@ -223,6 +232,7 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
             page.locator('[data-act="add-user-group"]').click()
             page.locator('#groupName').fill('브라우저 팀')
             page.locator(f'[name="members"][value="{uid}"]').check()
+            page.locator(f'[name="members"][value="{manager_id}"]').check()
             save_modal()
             expect(page.locator('.group-card')).to_contain_text('브라우저 팀')
             page.locator('[data-group-tab="processes"]').click()
@@ -240,7 +250,56 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
             page.locator('#aclLevel').select_option('3')
             save_modal()
             page.locator(f'[data-create-grant="g:{gid}"]').check()
+            page.locator(f'[data-remove-grant="g:{gid}"]').check()
+            page.locator('#effectiveUser').select_option(manager_id)
+            check(page.locator('.acl-rule').count()==1, 'one compact permission card per subject')
+            check(page.locator('.acl-table, .policy-note').count()==0, 'permissions do not use cramped table or repetitive footer notes')
+            for language in ['en','ja','ko']:
+                page.locator('#spLanguage').select_option(language)
+                expect(page.locator('#effectiveUser')).to_have_value(manager_id)
+                check(page.locator(f'[data-remove-grant="g:{gid}"]').is_checked(),'delete toggle survives locale '+language)
+                for width,height in [(1440,1000),(390,844)]:
+                    page.set_viewport_size({'width':width,'height':height})
+                    box=page.locator('.acl-rule').bounding_box()
+                    check(box and box['x']>=-1 and box['x']+box['width']<=width+1,'permission card fits '+language+str(width))
+                    page.screenshot(path=str(artifacts/f'manager-permissions-{language}-{width}.png'),full_page=True)
+            page.set_viewport_size({'width':390,'height':844})
+            # Expire only the test session's recent-authentication timestamp. The
+            # application must request and validate a real password, not a mock.
+            with sqlite3.connect(root/'db') as connection:
+                connection.execute('UPDATE access_session SET auth_at=0')
             page.locator('[data-act="preview-policy"]').click()
+            expect(page.locator('#reauthDialog')).to_be_visible()
+            for language,label in [('ko','비밀번호'),('en','Password'),('ja','パスワード')]:
+                page.evaluate('(language)=>setLocale(language)',language)
+                expect(page.locator('#reauthDialog label')).to_have_text(label)
+                field=page.locator('#reauthPassword').bounding_box()
+                caption=page.locator('#reauthDialog label').bounding_box()
+                dialog=page.locator('#reauthDialog').bounding_box()
+                check(field['y']>=caption['y']+caption['height'],'reauth label is above input '+language)
+                check(field['x']>=dialog['x'] and field['x']+field['width']<=dialog['x']+dialog['width'],'reauth input fits dialog '+language)
+                page.screenshot(path=str(artifacts/f'manager-reauth-{language}-390.png'),full_page=True)
+            page.evaluate("()=>setLocale('ko')")
+            page.locator('#reauthCancel').click()
+            expect(page.locator('#reauthDialog')).not_to_be_visible()
+            check(not api_state()['db']['processGroups'][-1]['rules'], 'cancel reauthentication does not apply policy')
+            check(page.locator(f'[data-remove-grant="g:{gid}"]').is_checked(), 'cancel preserves policy draft')
+            page.locator('[data-act="preview-policy"]').click()
+            expect(page.locator('#reauthDialog')).to_be_visible()
+            page.keyboard.press('Escape')
+            expect(page.locator('#reauthDialog')).not_to_be_visible()
+            page.locator('[data-act="preview-policy"]').click()
+            expect(page.locator('#reauthDialog')).to_be_visible()
+            page.locator('#reauthPassword').fill(password+'wrong')
+            page.locator('#reauthForm button[type="submit"]').click()
+            expect(page.locator('#reauthError')).not_to_have_text('')
+            expect(page.locator('#reauthDialog')).to_be_visible()
+            page.locator('#reauthPassword').fill(password)
+            page.locator('#reauthForm button[type="submit"]').click()
+            expect(page.locator('#reauthDialog')).not_to_be_visible()
+            expect(page.locator('#modal')).to_be_visible()
+            page.set_viewport_size({'width':1440,'height':1000})
+
             expect(page.locator('#modal')).to_be_visible()
             save_modal()
             check(api_state()['db']['processGroups'][-1]['rules']['g:'+gid]['create'],'policy saved through server impact confirmation')
@@ -392,6 +451,30 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
                 page.screenshot(path=str(artifacts/f'access-editor-{width}.png'),full_page=True)
             page.locator('#modalForm button[value="save"]').click()
             expect(page.locator('#modal')).not_to_be_visible()
+            page.set_viewport_size({'width':1440,'height':1000})
+            page.locator('[data-act="logout"]').first.click()
+            expect(page.locator('#loginForm')).to_be_visible()
+            page.locator('#loginId').fill('manager');page.locator('#loginPassword').fill(password)
+            page.locator('#loginForm button[type=submit]').click()
+            expect(page.locator('[data-act="new-process"]')).to_be_visible()
+            check(page.locator('[data-nav^="/admin"]').count()==0,'manager is not a global administrator')
+            expect(page.locator(f'[data-act="delete-process"][data-id="{pid}"]')).to_be_visible()
+            page.locator('[data-act="new-process"]').click()
+            check(page.locator('[data-act="editor-specific"]').is_disabled(),'manager cannot select OS execution credentials')
+            page.locator('#processName').fill('Manager temporary worker')
+            page.locator('#processCommand').fill('echo manager-browser')
+            page.locator('#processGroup').select_option(pgid)
+            page.locator('#modalForm button[value="save"]').click()
+            expect(page.locator('#modal')).not_to_be_visible()
+            mid=next(p['id'] for p in api_state()['db']['processes'] if p['name']=='Manager temporary worker')
+            page.locator(f'[data-act="delete-process"][data-id="{mid}"]').click()
+            expect(page.locator('#confirm')).to_be_visible()
+            page.locator('[data-act="confirm-no"]').click()
+            check(any(p['id']==mid for p in api_state()['db']['processes']),'cancel deletion keeps the process')
+            page.locator(f'[data-act="delete-process"][data-id="{mid}"]').click()
+            page.locator('[data-act="confirm-yes"]').click()
+            expect(page.locator(f'[data-process-row="{mid}"]')).to_have_count(0)
+            check(not any(p['id']==mid for p in api_state()['db']['processes']),'manager delete persists through real API')
             check(not errors,'no browser JavaScript errors: '+str(errors))
             if not os.environ.get('SPAWNPOINT_BROWSER_BRIDGE'):
                 check(not page.evaluate('Object.keys(localStorage).some(k=>/token|password|session/i.test(k))'),'no stored browser credentials')
