@@ -3,7 +3,7 @@
 
 Never changes the machine trust store, installed services or production data.
 Optional --download-caddy fetches a pinned official release and verifies its
-SHA-256 against that release's checksum manifest before executing it.
+SHA-512 against that release's checksum manifest before executing it.
 """
 import argparse
 import hashlib
@@ -38,9 +38,12 @@ def download_caddy(directory):
     name = f'caddy_{VERSION}_windows_amd64.zip' if os.name == 'nt' else f'caddy_{VERSION}_linux_amd64.tar.gz'
     base = f'https://github.com/caddyserver/caddy/releases/download/v{VERSION}/'
     manifest = urllib.request.urlopen(base + f'caddy_{VERSION}_checksums.txt', timeout=60).read().decode()
-    expected = next(line.split()[0] for line in manifest.splitlines() if line.split()[-1] == name)
+    matches = [line.split()[0] for line in manifest.splitlines() if len(line.split()) == 2 and line.split()[-1] == name]
+    check(len(matches) == 1, 'missing or ambiguous Caddy checksum entry')
+    expected = matches[0].lower()
+    check(len(expected) == 128 and all(c in '0123456789abcdef' for c in expected), 'invalid Caddy SHA-512 checksum')
     data = urllib.request.urlopen(base + name, timeout=90).read()
-    check(hashlib.sha256(data).hexdigest() == expected, 'Caddy checksum mismatch')
+    check(hashlib.sha512(data).hexdigest() == expected, 'Caddy checksum mismatch')
     binary = 'caddy.exe' if os.name == 'nt' else 'caddy'
     if os.name == 'nt':
         content = zipfile.ZipFile(io.BytesIO(data)).read(binary)
