@@ -79,17 +79,20 @@ func validateState(s *State) error {
 	}
 	usableAdmin := false
 	for _, u := range s.Users {
-		if u.ID == "" || userIDs[u.ID] || strings.TrimSpace(u.Login) == "" || strings.TrimSpace(u.Name) == "" || !textOK(u.Login, 128) || !textOK(u.Name, 128) || strings.ContainsAny(u.Login, " \t") || logins[strings.ToLower(u.Login)] || !validRole(u.Role) || !contains([]string{"active", "paused"}, u.Status) || u.Version < 1 {
+		if u.ID == "" || userIDs[u.ID] || strings.TrimSpace(u.Login) == "" || strings.TrimSpace(u.Name) == "" || !textOK(u.Login, 256) || !textOK(u.Name, 128) || !validRole(u.Role) || !contains([]string{"active", "paused"}, u.Status) || u.Version < 1 {
 			return errors.New("사용자 ID, 이름, 역할 또는 상태를 확인하세요")
 		}
 		userIDs[u.ID] = true
-		logins[strings.ToLower(u.Login)] = true
 		if u.Auth == "local" {
+			if !textOK(u.Login, 128) || strings.ContainsAny(u.Login, " \t") || logins[strings.ToLower(u.Login)] {
+				return errors.New("사용자 ID가 없거나 중복되었습니다")
+			}
+			logins[strings.ToLower(u.Login)] = true
 			if !strings.HasPrefix(u.Hash, "pbkdf2-sha256$") || u.Subject != "" || u.External != "" {
 				return errors.New("자체 계정 인증 정보를 확인하세요")
 			}
 		} else if u.Auth == "os" {
-			if u.Subject == "" || u.External == "" || u.Hash != "" || subjects[u.Subject] {
+			if u.Subject == "" || strings.TrimSpace(u.External) == "" || !textOK(u.External, 256) || u.Hash != "" || subjects[u.Subject] {
 				return errors.New("OS 계정 연결이 없거나 중복되었습니다")
 			}
 			subjects[u.Subject] = true
@@ -244,6 +247,16 @@ func (m *Manager) applyAdmin(s *State, in AdminInput, secret *string) (action, t
 				return bad("초기 비밀번호를 입력하세요")
 			}
 		} else if u.Auth == "os" {
+			// OS authentication uses External + the resolved SID/UID, not a
+			// separately chosen login. Keep legacy labels stable on edits; new
+			// links derive their label from the OS account. ID remains generated.
+			u.Login = u.External
+			if old != nil && old.Auth == "os" {
+				u.Login = old.Login
+			}
+			if u.External == "" || !textOK(u.External, 256) {
+				return bad("서버에서 확인 가능한 OS 계정을 입력하세요")
+			}
 			u.Subject, err = m.resolveOS(u.External)
 			if err != nil {
 				return bad("서버에서 확인 가능한 OS 계정을 입력하세요")

@@ -126,9 +126,9 @@ try:
     # Provision and authenticate the OS account while the server actually runs
     # as LocalService/systemd, without changing the process execution identity.
     state=api('/api/access/state')
-    api('/api/access/admin',{'action':'user.upsert','revision':state['revision'],'user':{'login':'native-linked','name':'Native account','auth':'os','external':USER,'role':'viewer','status':'active','groups':[]}})
+    api('/api/access/admin',{'action':'user.upsert','revision':state['revision'],'user':{'name':'Native account','auth':'os','external':USER,'role':'viewer','status':'active','groups':[]}})
     native=api('/auth/login',{'method':'os','login':USER,'password':PASSWORD})
-    assert native['user']['login']=='native-linked', 'OS login through service'
+    assert native['user']['auth']=='os' and native['user']['external']==USER and native['user']['id'], 'OS link without a separate login authenticates through service'
     result=api('/auth/login',{'method':'local','login':'service-admin','password':ADMIN_PASSWORD})
     CSRF=result['csrf']
     runtime = api('/runtime')

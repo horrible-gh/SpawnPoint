@@ -3,6 +3,7 @@
 The optional local bridge is only for rendering in policy-restricted environments;
 CI deliberately uses native browser HTTP/cookies, never the bridge.
 """
+import getpass
 import http.cookiejar
 import json
 import os
@@ -115,6 +116,58 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
             expect(page.locator('tbody')).to_contain_text('브라우저 개발자')
             check(True,'user created through form')
             uid = next(u['id'] for u in api_state()['db']['users'] if u['login']=='developer')
+            # OS links use one identity field, not a second application login.
+            os_user = os.environ.get('SPAWNPOINT_AUTH_TEST_USER') or getpass.getuser()
+            sent_users = []
+            def record_user_request(req):
+                if req.url.endswith('/api/access/admin') and req.method == 'POST':
+                    data = req.post_data_json
+                    if data.get('action') == 'user.upsert':
+                        sent_users.append(data['user'])
+            page.on('request', record_user_request)
+            page.locator('[data-act="add-user"]').click()
+            page.locator('#userName').fill('OS 연결 사용자')
+            page.locator('#userLogin').fill('discard-this-alias')
+            page.locator('#userTempPassword').fill('discard-this-password')
+            page.locator('#userAuth').select_option('os')
+            expect(page.locator('#userLogin')).not_to_be_visible()
+            expect(page.locator('#userLogin')).to_be_disabled()
+            expect(page.locator('#userTempPassword')).not_to_be_visible()
+            expect(page.locator('#userTempPassword')).to_be_disabled()
+            check(page.locator('#externalIdentity').evaluate('(e)=>e.required'), 'OS account identity is required')
+            check(not page.locator('#userLogin').evaluate('(e)=>e.required'), 'hidden application login is not required')
+            page.locator('#externalIdentity').fill(os_user)
+            page.locator('#userAuth').select_option('local')
+            expect(page.locator('#userLogin')).to_be_visible()
+            expect(page.locator('#userTempPassword')).to_be_visible()
+            check(page.locator('#userLogin').evaluate('(e)=>e.required'), 'local login becomes required again')
+            expect(page.locator('#externalIdentity')).to_be_disabled()
+            page.locator('#userAuth').select_option('os')
+            for width, height in [(1440,1000),(390,844)]:
+                page.set_viewport_size({'width':width,'height':height})
+                box = page.locator('#modal').bounding_box()
+                check(box['x'] >= -1 and box['x'] + box['width'] <= width + 1, 'OS user dialog fits viewport '+str(width))
+                page.screenshot(path=str(artifacts/f'access-os-user-{width}.png'),full_page=True)
+            page.set_viewport_size({'width':1440,'height':1000})
+            save_modal()
+            if not os.environ.get('SPAWNPOINT_BROWSER_BRIDGE'):
+                check('login' not in sent_users[-1] and sent_users[-1]['password'] == '', 'OS request omits the alias and stale local password')
+            linked = next(u for u in api_state()['db']['users'] if u['auth']=='os' and u['external']==os_user)
+            expect(page.locator('tbody')).to_contain_text(os_user)
+            page.locator('#userSearch').fill(os_user)
+            expect(page.locator('tbody')).to_contain_text('OS 연결 사용자')
+            page.locator('#userSearch').fill('')
+            page.locator(f'[data-act="edit-user"][data-id="{linked["id"]}"]').click()
+            expect(page.locator('#userLogin')).not_to_be_visible()
+            page.locator('#userAuth').select_option('local')
+            expect(page.locator('#userLogin')).to_be_editable()
+            check(page.locator('#userTempPassword').evaluate('(e)=>e.required'), 'OS to local conversion needs its own password')
+            page.locator('#userAuth').select_option('os')
+            page.locator('#userName').fill('OS 연결 사용자 수정')
+            save_modal()
+            after = next(u for u in api_state()['db']['users'] if u['id']==linked['id'])
+            check(after['external']==linked['external'] and after['version']==linked['version'], 'OS edit keeps identity and session version')
+            page.remove_listener('request',record_user_request)
             nav('/admin/groups')
             page.locator('[data-act="add-user-group"]').click()
             page.locator('#groupName').fill('브라우저 팀')

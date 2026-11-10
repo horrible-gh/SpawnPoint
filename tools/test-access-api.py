@@ -205,9 +205,20 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-access-') as work:
         os_user = os.environ.get('SPAWNPOINT_AUTH_TEST_USER')
         os_password = os.environ.get('SPAWNPOINT_AUTH_TEST_PASSWORD')
         if os_user and os_password:
-            admin.admin('user.upsert', user={'login': 'os-linked', 'name': 'OS user', 'role': 'viewer', 'auth': 'os', 'status': 'active', 'external': os_user, 'groups': []})
+            admin.admin('user.upsert', user={'name': 'OS user', 'role': 'viewer', 'auth': 'os', 'status': 'active', 'external': os_user, 'groups': []})
             native = Client(base); result = native.login(os_user, os_password, 'os')
-            check(result['user']['login'] == 'os-linked', 'native OS login maps to provisioned application identity')
+            check(result['user']['auth'] == 'os' and result['user']['external'] == os_user and result['user']['id'], 'native OS login maps to the link provisioned without a separate login')
+            native_id = result['user']['id']
+            linked = next(u for u in admin.state()['db']['users'] if u['id'] == native_id)
+            edit = {k: linked[k] for k in ['id', 'name', 'role', 'auth', 'status', 'external', 'groups']}
+            edit['name'] = 'Renamed OS user'
+            admin.admin('user.upsert', user=edit)
+            after = next(u for u in admin.state()['db']['users'] if u['id'] == native_id)
+            check(after['id'] == linked['id'] and after['external'] == linked['external'] and after['version'] == linked['version'], 'alias-free OS edit preserves identity and sessions')
+            check(native.call('/auth/me')['user']['id'] == native_id, 'native session survives metadata-only edit')
+            duplicate = {**edit, 'id': '', 'login': 'must-not-create-another-identity'}
+            admin.call('/api/access/admin', {'action': 'user.upsert', 'revision': admin.state()['revision'], 'user': duplicate}, expected=400)
+            admin.call('/api/access/admin', {'action': 'user.upsert', 'revision': admin.state()['revision'], 'user': {'name': 'No login', 'role': 'viewer', 'auth': 'local', 'status': 'active', 'password': password}}, expected=400)
             native.call('/auth/login', {'method': 'os', 'login': os_user, 'password': os_password + '-wrong'}, expected=401)
             execution = admin.call('/processes', {'cmd': 'whoami' if os.name == 'nt' else 'id -un', 'start': True, 'group_id': pg, 'run_as': {'mode': 'user', 'username': os_user, 'password': os_password}})
             check(execution['process']['status'] != 'failed', 'native run-as still launches behind the access gateway')
@@ -234,6 +245,9 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-access-') as work:
         check(not anon.call('/auth/me')['setup_required'], 'bootstrap stays disabled after restart')
         admin.state()
         check(len(admin.state()['db']['processGroups']) == len(snapshot['db']['processGroups']), 'groups survive restart')
+        if os_user and os_password:
+            check(native.call('/auth/me')['user']['id'] == native_id, 'alias-free OS identity and session survive restart')
+            check(native.login(os_user, os_password, 'os')['user']['id'] == native_id, 'native login still works after restart')
         print(f'PASS: {checks} real-server access-control checks; roles, groups, exceptions, batching, sessions, tokens, CSRF, redaction, audit and persistence')
     finally:
         if proc.poll() is None:
