@@ -6,52 +6,21 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"spawnpoint/internal/requesttransport"
 )
 
 const cookieName = "sp_session"
 
 var errLogin = errors.New("계정 또는 비밀번호를 확인하세요")
 
-func peerLoopback(s string) bool {
-	h, _, e := net.SplitHostPort(s)
-	if e != nil {
-		h = s
-	}
-	ip := net.ParseIP(strings.Trim(h, "[]"))
-	return ip != nil && ip.IsLoopback()
-}
-func hostLoopback(s string) bool {
-	h, _, e := net.SplitHostPort(s)
-	if e != nil {
-		h = s
-	}
-	return strings.EqualFold(h, "localhost") || peerLoopback(h)
-}
-func localRequest(r *http.Request) bool { return peerLoopback(r.RemoteAddr) && hostLoopback(r.Host) }
-func HTTPS(r *http.Request) bool {
-	return r.TLS != nil || (os.Getenv("SPAWNPOINT_TRUST_LOOPBACK_PROXY") == "1" && peerLoopback(r.RemoteAddr) && r.Header.Get("X-Forwarded-Proto") == "https")
-}
-func Secure(r *http.Request) bool { return localRequest(r) || HTTPS(r) }
-func sameOrigin(r *http.Request) bool {
-	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
-		return false
-	}
-	s := r.Header.Get("Origin")
-	if s == "" {
-		return true
-	}
-	u, e := url.Parse(s)
-	scheme := "http"
-	if HTTPS(r) {
-		scheme = "https"
-	}
-	return e == nil && u.Scheme == scheme && strings.EqualFold(u.Host, r.Host) && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == ""
-}
+func localRequest(r *http.Request) bool { return requesttransport.DirectLocal(r) }
+func HTTPS(r *http.Request) bool        { return requesttransport.HTTPS(r) }
+func Secure(r *http.Request) bool       { return requesttransport.Secure(r) }
+func sameOrigin(r *http.Request) bool   { return requesttransport.SameOrigin(r) }
 func bearer(r *http.Request) (string, bool) {
 	v := r.Header.Get("Authorization")
 	if v == "" {

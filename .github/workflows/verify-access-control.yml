@@ -48,7 +48,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sh tools/dist.sh
-          go test -race ./internal/access ./internal/httpapi ./internal/runner ./internal/store
+          go test -race ./internal/requesttransport ./internal/access ./internal/httpapi ./internal/runner ./internal/store
       - name: Windows packaging
         if: runner.os == 'Windows'
         shell: pwsh
@@ -107,6 +107,7 @@ jobs:
         run: |
           python3 tools/test-access-diagnostics.py tools/test-access-api.py dist/linux64/spawnpoint
           python3 tools/test-bootstrap.py dist/linux64/spawnpoint
+          python3 tools/test-caddy-https.py dist/linux64/spawnpoint --download-caddy
           python3 tools/test-run-as-service.py dist/linux64/spawnpoint
       - name: Windows actual server authorization and service lifecycle
         if: runner.os == 'Windows'
@@ -116,6 +117,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'API integration failed' }
           python tools/test-bootstrap.py dist/win64/spawnpoint.exe
           if ($LASTEXITCODE -ne 0) { throw 'Bootstrap integration failed' }
+          python tools/test-caddy-https.py dist/win64/spawnpoint.exe --download-caddy
+          if ($LASTEXITCODE -ne 0) { throw 'Caddy HTTPS integration failed' }
           python tools/test-run-as-service.py dist/win64/spawnpoint.exe
           if ($LASTEXITCODE -ne 0) { throw 'Service integration failed' }
       - name: Real browser HTTP, sessions and approved UI
@@ -124,6 +127,7 @@ jobs:
           python3 -m pip install playwright==1.57.0
           python3 -m playwright install --with-deps chromium
           python3 tools/test-access-browser.py dist/linux64/spawnpoint
+          python3 tools/test-caddy-https.py dist/linux64/spawnpoint --download-caddy --browser
       - name: Formatting
         shell: bash
         run: test -z "$(git ls-files '*.go' | xargs gofmt -l)"

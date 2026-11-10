@@ -87,10 +87,19 @@ The Host header must also be localhost for the local exception. Cross-origin wri
 are rejected, and credential bodies require JSON. API tokens entered in the UI are
 kept only in tab memory, not localStorage.
 
-For a trusted TLS reverse proxy on the same machine, explicitly set
-`SPAWNPOINT_TRUST_LOOPBACK_PROXY=1` in addition to `SPAWNPOINT_API_TOKENS`. Only a
-loopback peer's `X-Forwarded-Proto: https` is trusted; configure the proxy to overwrite
-that header. Do not expose an unauthenticated runner to the network.
+A same-machine Caddy TLS proxy is recognized automatically with its default
+forwarding headers: the socket peer must be loopback, the scheme must be a single
+`https`, the forwarded Host must match the request Host, and the forwarded client
+IP list must be valid. No environment opt-in is required for this configuration.
+Authentication is still required; the access-control gateway also accepts its
+managed user session. Login, cookies, origin checks and execution use one shared
+transport policy. A forwarded HTTP request never receives the direct-local exception.
+
+This trusts local OS processes and the local proxy. The proxy must overwrite client
+forwarding headers, as Caddy does by default. Remote/LAN socket peers are never
+trusted based on these headers. `SPAWNPOINT_TRUST_LOOPBACK_PROXY=0` explicitly opts
+out; `1` retains the legacy opt-in for a local proxy supplying only the scheme.
+Do not expose an unauthenticated runner to the network.
 
 ## Upgrade
 

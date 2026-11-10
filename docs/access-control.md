@@ -54,10 +54,19 @@ sudo ./spawnpoint setup token
 환경변수 `SPAWNPOINT_SETUP_TOKEN` 방식도 유지한다. 이 경우 CLI에는 같은 환경변수를
 설정해야 하며 파일이 자동 생성되었다고 안내하지 않는다.
 
-접속은 직접 localhost 또는 HTTPS를 사용한다. 동일 호스트의 신뢰하는 TLS
-프록시를 사용하는 경우에만 `SPAWNPOINT_TRUST_LOOPBACK_PROXY=1`을 설정하고,
-프록시는 X-Forwarded-Proto/Host를 검증·덮어써야 한다. 전달 헤더만으로 원격
-요청을 신뢰하지 않는다. 일반 HTTP 원격 로그인은 차단한다.
+접속은 직접 localhost 또는 HTTPS를 사용한다. 같은 서버의 Caddy가
+`reverse_proxy 127.0.0.1:7527`로 전달하는 HTTPS는 **추가 환경변수 없이 인식**한다.
+실제 TCP 연결이 루프백이고, 단일 `X-Forwarded-Proto: https`, 요청 Host와 일치하는
+`X-Forwarded-Host`, 유효한 `X-Forwarded-For`가 있을 때만 자동 인정한다.
+로그인·최초 설정·세션 쿠키·출처 검사·지정 계정 실행은 같은 판정 함수를 사용한다.
+
+로컬 OS 프로세스와 프록시는 신뢰 경계 안에 있다. 프록시는 외부에서 받은 전달
+헤더를 덮어써야 하며 Caddy 기본 동작이 이를 수행한다. 다른 호스트의 연결은
+헤더가 같아도 신뢰하지 않는다. 일반 원격 HTTP 및 프록시의 HTTP 프런트엔드도
+차단한다. 전달 요청에는 Host가 localhost여도 직접 로컬 예외를 주지 않는다.
+`SPAWNPOINT_TRUST_LOOPBACK_PROXY=0`은 자동 인식을 명시적으로 끄며, 기존 `1`은
+스킴 헤더만 전달하는 로컬 프록시를 위한 명시적 호환 옵션으로 유지한다.
+브라우저 인증서 신뢰 설정을 변경하거나 인증/권한 검사를 생략하지 않는다.
 
 기존 `SPAWNPOINT_API_TOKENS`는 사용자/범위 없는 인증이므로 이 게이트웨이를
 우회하지 못한다. 기존 연동은 관리자가 사용자 소유·프로세스 그룹 범위를 갖는

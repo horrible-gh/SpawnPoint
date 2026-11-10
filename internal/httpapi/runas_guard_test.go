@@ -51,3 +51,38 @@ func TestExistingIdentityRequiresProtectedTransport(t *testing.T) {
 		t.Fatal("cross-origin identity action allowed")
 	}
 }
+
+func TestAutomaticLocalProxyAlsoProtectsExecution(t *testing.T) {
+	t.Setenv("SPAWNPOINT_TRUST_LOOPBACK_PROXY", "")
+	s := &Server{tokens: map[string]struct{}{"test-token": {}}}
+	r := httptest.NewRequest("POST", "http://spawnpoint.prd/processes", nil)
+	r.RemoteAddr = "127.0.0.1:32100"
+	r.Header.Set("X-Forwarded-Proto", "https")
+	r.Header.Set("X-Forwarded-Host", "spawnpoint.prd")
+	r.Header.Set("X-Forwarded-For", "192.0.2.25")
+	r.Header.Set("Origin", "https://spawnpoint.prd")
+	r.Header.Set("Content-Type", "application/json")
+	if s.identityTransport(r) {
+		t.Fatal("proxy grants execution without authentication")
+	}
+	r.Header.Set("Authorization", "Bearer test-token")
+	if !s.identityGuard(httptest.NewRecorder(), r, true) {
+		t.Fatal("authenticated HTTPS execution rejected behind Caddy")
+	}
+	r.Header.Set("Origin", "http://spawnpoint.prd")
+	if s.identityGuard(httptest.NewRecorder(), r, true) {
+		t.Fatal("wrong origin scheme accepted")
+	}
+	r.Header.Set("Origin", "https://spawnpoint.prd")
+	r.RemoteAddr = "192.0.2.25:32100"
+	if s.identityTransport(r) {
+		t.Fatal("remote forged proxy accepted")
+	}
+	r.RemoteAddr = "127.0.0.1:32100"
+	r.Host = "localhost:7527"
+	r.Header.Set("X-Forwarded-Host", r.Host)
+	r.Header.Set("X-Forwarded-Proto", "http")
+	if s.identityTransport(r) {
+		t.Fatal("HTTP proxy acquired the local execution exception")
+	}
+}

@@ -5,15 +5,12 @@ import (
 	"encoding/json"
 	"io"
 	"mime"
-	"net"
 	"net/http"
-	"net/url"
-	"os"
 	"os/user"
 	"runtime"
-	"strings"
 
 	"spawnpoint/internal/access"
+	"spawnpoint/internal/requesttransport"
 	"spawnpoint/internal/runas"
 	"spawnpoint/internal/runner"
 )
@@ -46,42 +43,12 @@ func parseRunAs(raw json.RawMessage) (*runas.Input, *apiError) {
 	}
 	return &normalized, nil
 }
-func hostOnly(host string) string {
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		return strings.Trim(h, "[]")
-	}
-	return strings.Trim(host, "[]")
-}
-func loopback(host string) bool {
-	h := hostOnly(host)
-	if h == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(h)
-	return ip != nil && ip.IsLoopback()
-}
-func sameOrigin(r *http.Request) bool {
-	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
-		return false
-	}
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return true
-	}
-	u, err := url.Parse(origin)
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host == r.Host && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == ""
-}
+func sameOrigin(r *http.Request) bool { return requesttransport.SameOrigin(r) }
 func (s *Server) identityTransport(r *http.Request) bool {
-	// Host checking matters: a remote reverse-proxy client and a DNS-rebinding
-	// request must not become a trusted local client just because the peer is local.
-	if loopback(r.RemoteAddr) && loopback(r.Host) {
+	if requesttransport.DirectLocal(r) {
 		return true
 	}
-	secure := r.TLS != nil
-	if os.Getenv("SPAWNPOINT_TRUST_LOOPBACK_PROXY") == "1" && loopback(r.RemoteAddr) && r.Header.Get("X-Forwarded-Proto") == "https" {
-		secure = true
-	}
-	return secure && ((access.Authenticated(r)) || (len(s.tokens) > 0 && s.authorised(r)))
+	return requesttransport.HTTPS(r) && (access.Authenticated(r) || (len(s.tokens) > 0 && s.authorised(r)))
 }
 func (s *Server) identityGuard(w http.ResponseWriter, r *http.Request, body bool) bool {
 	if !sameOrigin(r) {

@@ -52,7 +52,9 @@ func TestExecutionTransportBoundary(t *testing.T) {
 			if tc.token != "" {
 				r.Header.Set("Authorization", "Bearer "+tc.token)
 			}
-			r.Header.Set("X-Forwarded-Proto", tc.proto)
+			if tc.proto != "" {
+				r.Header.Set("X-Forwarded-Proto", tc.proto)
+			}
 			if got := s.identityTransport(r); got != tc.want {
 				t.Fatalf("transport=%v want=%v", got, tc.want)
 			}

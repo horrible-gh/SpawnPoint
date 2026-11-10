@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestTransportDoesNotTrustForwardingByDefault(t *testing.T) {
+func TestBareForwardingRequiresExplicitTrust(t *testing.T) {
 	t.Setenv("SPAWNPOINT_TRUST_LOOPBACK_PROXY", "")
 	r := httptest.NewRequest("POST", "http://example.test/auth/login", nil)
 	r.RemoteAddr = "127.0.0.1:1234"
