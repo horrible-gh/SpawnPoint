@@ -85,7 +85,7 @@ class Client:
             response = e
         with response:
             payload = json.loads(response.read())
-            check(response.status == expected, f'{req.method} {path}: {response.status}, expected {expected}')
+            check(response.status == expected, f'{req.get_method()} {path}: {response.status}, expected {expected}')
         if payload.get('csrf'):
             self.csrf = payload['csrf']
         return payload
