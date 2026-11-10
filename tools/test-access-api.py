@@ -157,6 +157,39 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-access-') as work:
         admin.call('/api/access/admin', {'action': 'policy', 'revision': before['revision'], 'target': 'group', 'id': pg, 'rules': {}}, expected=409)
         admin.admin('bulk', ids=[public], destination=pg, clear=True)
         ref.call('/processes/' + public)
+        # A single process may move directly from the editor with a reviewed
+        # revision; all policy and ownership boundaries are still server-side.
+        moved = admin.call('/processes', {'cmd': 'echo before-move', 'label': 'editor-move', 'group_id': pg, 'start': False, 'env': {'KEEP': 'a,b=c'}, 'auto_start': False})['process']['id']
+        overrides = {'u:' + users['viewer']: {'level': 1, 'create': False}}
+        admin.admin('policy', target='process', id=moved, rules=overrides)
+        admin.admin('process.meta', id=moved, protected=False, public=False)
+        move = {'cmd': 'echo after-move', 'label': 'editor-moved', 'group_id': hidden, 'env': {'KEEP': 'a,b=c'}, 'auto_start': False}
+        rev = admin.state()['revision']
+        for c in [viewer, ref, dev]:
+            c.call('/processes/' + moved, {**move, 'revision': rev}, 'PUT', expected=403)
+        admin.call('/processes/' + moved, move, 'PUT', expected=409)
+        admin.call('/processes/' + moved, {**move, 'revision': rev-1}, 'PUT', expected=409)
+        admin.call('/processes/' + moved, {**move, 'revision': rev, 'group_id': 'missing'}, 'PUT', expected=400)
+        check(admin.call('/processes/' + moved)['process']['cmd']=='echo before-move', 'invalid moves never update the command')
+        impact = admin.call('/api/access/preview', {'action':'bulk', 'revision':rev, 'ids':[moved], 'destination':hidden, 'clear':False})
+        check(impact['impact']['lost']>0 and admin.call('/processes/' + moved)['process']['group_id']==pg, 'editor group preview is read-only')
+        admin.admin('process-group.upsert', name='concurrent-policy-change', guest=False)
+        admin.call('/processes/' + moved, {**move, 'revision': impact['revision']}, 'PUT', expected=409)
+        check(admin.call('/processes/' + moved)['process']['cmd']=='echo before-move', 'stale preview rejected before command mutation')
+        rev = admin.state()['revision']
+        impact = admin.call('/api/access/preview', {'action':'bulk', 'revision':rev, 'ids':[moved], 'destination':hidden, 'clear':False})
+        result = admin.call('/processes/' + moved, {**move, 'revision': impact['revision']}, 'PUT')
+        check(result['persisted'] and result['process']['group_id']==hidden and result['process']['status']=='stopped', 'editor saves target group without starting')
+        row = next(p for p in admin.state()['db']['processes'] if p['id']==moved)
+        check(row['overrides']==overrides and row['guest'] is False and row['env']=={'KEEP':'a,b=c'}, 'editor move preserves exceptions, public override and environment')
+        ref.call('/processes/' + moved, expected=404)
+        viewer.call('/processes/' + moved)  # Explicit exception survives the move.
+        check(any(a['action']=='프로세스 그룹 이동' and a['object']==moved for a in admin.state()['db']['audit']), 'editor moves have an audit record')
+        # Even a token owned by an administrator cannot change process groups.
+        expiry_move = time.strftime('%Y-%m-%d', time.gmtime(time.time()+86400))
+        token_move = admin.admin('token.create', name='move-denial', owner=admin_id, scope=hidden, level=3, create=True, expiry=expiry_move)['secret']
+        token_client = Client(base); token_client.bearer=token_move
+        token_client.call('/processes/' + moved, {**move, 'group_id':pg, 'revision':admin.state()['revision']}, 'PUT', expected=403)
         # Anonymous status-only access is opt-in and never execution authority.
         admin.admin('guest', guest=True, guest_logs=False, public_groups=[pg])
         guest_rows = anon.call('/processes')['processes']
@@ -245,6 +278,7 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-access-') as work:
         check(not anon.call('/auth/me')['setup_required'], 'bootstrap stays disabled after restart')
         admin.state()
         check(len(admin.state()['db']['processGroups']) == len(snapshot['db']['processGroups']), 'groups survive restart')
+        check(admin.call('/processes/' + moved)['process']['group_id']==hidden, 'editor group move survives server restart')
         if os_user and os_password:
             check(native.call('/auth/me')['user']['id'] == native_id, 'alias-free OS identity and session survive restart')
             check(native.login(os_user, os_password, 'os')['user']['id'] == native_id, 'native login still works after restart')

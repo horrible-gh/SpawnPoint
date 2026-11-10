@@ -259,6 +259,65 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
             expect(page.locator('#modal')).not_to_be_visible()
             state = api_state(); item=next(p for p in state['db']['processes'] if p['name']=='Browser Worker'); pid=item['id']
             check(item['status']=='stopped' and item['env']['PUNCTUATION']=='a,b=c','save-only and environment punctuation preserved')
+            # Group changes stay in the process editor; confirmation is read-only
+            # until Apply, and Cancel/Escape preserves every unsaved field.
+            original_group = item['pg']
+            def group_of():
+                return next(p for p in api_state()['db']['processes'] if p['id']==pid)['pg']
+            page.locator(f'[data-act="edit-process"][data-id="{pid}"]').click()
+            expect(page.locator('#processGroup')).to_be_enabled()
+            page.locator('#processGroup').select_option('pg-default')
+            page.locator('#processName').fill('Browser Worker edited')
+            page.locator('#processCommand').fill('echo browser-output-edited')
+            page.locator('#modalForm button[value="save"]').click()
+            expect(page.locator('#processMoveDialog')).to_be_visible()
+            check(group_of()==original_group, 'preview never moves a process')
+            page.locator('#processMoveCancel').click()
+            expect(page.locator('#processMoveDialog')).not_to_be_visible()
+            expect(page.locator('#processName')).to_have_value('Browser Worker edited')
+            expect(page.locator('#processCommand')).to_have_value('echo browser-output-edited')
+            check(group_of()==original_group,'cancel preserves the original group')
+            page.locator('#modalForm button[value="save"]').click()
+            expect(page.locator('#processMoveDialog')).to_be_visible()
+            page.keyboard.press('Escape')
+            expect(page.locator('#processMoveDialog')).not_to_be_visible()
+            check(group_of()==original_group, 'Escape never applies the group move')
+            page.locator('#modalForm button[value="save"]').click()
+            expect(page.locator('#processMoveDialog')).to_be_visible()
+            # Real policy changes after preview must stop the save before mutation.
+            page.evaluate("""async()=>{const a=await (await fetch('/api/access/state')).json();
+                const me=await (await fetch('/auth/me')).json();
+                const r=await fetch('/api/access/admin',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrf},body:JSON.stringify({action:'process-group.upsert',revision:a.revision,name:'Concurrent group'})});
+                if(!r.ok)throw new Error('test policy update failed');} """)
+            page.locator('#processMoveApply').click()
+            expect(page.locator('#modalError')).to_contain_text('변경되었습니다')
+            expect(page.locator('#processName')).to_have_value('Browser Worker edited')
+            check(group_of()==original_group, 'stale editor preview cannot move the process')
+            page.locator('#modalForm button[value="save"]').click()
+            expect(page.locator('#processMoveDialog')).to_be_visible()
+            page.screenshot(path=str(artifacts/'process-editor-group-review.png'),full_page=True)
+            page.locator('#processMoveApply').click()
+            expect(page.locator('#modal')).not_to_be_visible()
+            check(group_of()=='pg-default','editor group move persisted after confirmation')
+            changed=next(p for p in api_state()['db']['processes'] if p['id']==pid)
+            check(changed['name']=='Browser Worker edited' and changed['status']=='stopped' and changed['env']['PUNCTUATION']=='a,b=c','save keeps changed fields, env and stopped state')
+            # Return to the developer-visible group and test Save & Restart.
+            page.locator(f'[data-act="edit-process"][data-id="{pid}"]').click()
+            page.locator('#processGroup').select_option(original_group)
+            for language,title in [('en','Group access changes'),('ja','グループ変更の影響'),('ko','그룹 변경 영향')]:
+                page.evaluate('(language)=>setLocale(language)',language)
+                page.locator('#modalForm button[value="run"]').click()
+                expect(page.locator('#processMoveDialog')).to_be_visible()
+                expect(page.locator('#processMoveTitle')).to_have_text(title)
+                page.set_viewport_size({'width':390,'height':844})
+                box=page.locator('#processMoveDialog').bounding_box()
+                check(box is not None and box['x']>=-1 and box['x']+box['width']<=391,'group review within mobile viewport '+language)
+                if language=='en':page.screenshot(path=str(artifacts/'process-editor-group-review-mobile-en.png'),full_page=True)
+                if language!='ko':page.locator('#processMoveCancel').click()
+            page.locator('#processMoveApply').click()
+            expect(page.locator('#modal')).not_to_be_visible()
+            check(group_of()==original_group,'Save & Restart restores chosen group')
+            page.set_viewport_size({'width':1440,'height':1000})
             page.locator(f'[data-process-row="{pid}"] [data-act="run"]').click()
             expect(page.locator('#liveLog')).to_contain_text('browser-output')
             # All administration views must render on real state, including empty states.
@@ -294,6 +353,10 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
             expect(page.locator('[data-act="new-process"]')).to_be_visible()
             check(page.locator('[data-nav="/admin/users"]').count()==0,'ordinary user has no administration navigation')
             check(page.locator('[data-act="delete-process"]').count()==0,'developer cannot delete')
+            page.locator(f'[data-act="edit-process"][data-id="{pid}"]').click()
+            expect(page.locator('#processGroup')).to_be_disabled()
+            check(page.locator('#processGroup').is_disabled(),'developer cannot move an existing process')
+            page.locator('[data-act="close-modal"]').first.click()
             page.locator('[data-act="new-process"]').click()
             check(page.locator('[data-act="editor-specific"]').is_disabled(),'developer cannot choose another execution account')
             page.locator('#processName').fill('Developer Worker');page.locator('#processCommand').fill('echo developer-output')

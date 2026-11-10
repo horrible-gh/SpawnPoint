@@ -1,9 +1,0 @@
-{
-  ".github/workflows/verify-access-control.yml": "54e58052d17e2bf113d2f2db28cdba31a89155b5f1080eb8eaaa7dd4944e36f5",
-  "docs/access-control.md": "aec8c0cb0026d20035de761da771a826b78328f8964f83743fa57dde498a71aa",
-  "internal/access/process.go": "da967a186f2b09c4e48812bb0febefc9da4f24d358bb26508bc1cae1a6685421",
-  "internal/access/process_group_edit_test.go": "5e9f15e855889cbc831957423973a40c5c9cfd77eb77181711f8f2f8de2627e4",
-  "internal/webui/access.html": "c452d7906aaedda86fb84ac631404ee0c5a8b8b69659262086e25e6585ac9ef8",
-  "tools/test-access-api.py": "3e1844ef3545cdbc2a15acb8b3a13c1631066bc6925e1c907c419ac43102625e",
-  "tools/test-access-browser.py": "5e19e917c615875a373d0fddcd82c549bd1094a0b047ab7470e74218cb6c58cb"
-}

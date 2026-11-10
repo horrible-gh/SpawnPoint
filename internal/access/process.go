@@ -236,6 +236,7 @@ type commandInput struct {
 	RunAs     json.RawMessage   `json:"run_as"`
 	PG        string            `json:"group_id"`
 	Protected *bool             `json:"protected"`
+	Revision  *int64            `json:"revision,omitempty"`
 }
 
 func commandBody(w http.ResponseWriter, r *http.Request) (commandInput, *runas.Input, error) {
@@ -378,9 +379,31 @@ func (m *Manager) editProcess(w http.ResponseWriter, r *http.Request, p Principa
 		return
 	}
 	meta := m.state.meta(id)
-	if in.PG != "" && in.PG != meta.PG {
-		fail(w, 400, "그룹 이동은 권한 영향 확인 후 일괄 이동에서 처리하세요")
+	moving := in.PG != "" && in.PG != meta.PG
+	// A preview is read-only. Require its policy revision at save time, before
+	// touching the command or credentials. Non-admins and scoped API tokens may
+	// edit allowed commands, but may never change the authorization boundary.
+	if moving && (!admin(u) || p.Token != nil) {
+		m.deny(w, p, id, 403)
 		return
+	}
+	if in.Revision != nil && *in.Revision != m.revision {
+		fail(w, 409, ErrConflict.Error())
+		return
+	}
+	if moving {
+		if in.Revision == nil {
+			fail(w, 409, "그룹 변경 영향을 먼저 확인하세요")
+			return
+		}
+		if m.state.group(in.PG) == nil {
+			fail(w, 400, "이동할 그룹이 없습니다")
+			return
+		}
+		if m.state.Settings.Reauth && m.now().Unix()-p.AuthAt > 600 {
+			send(w, 403, map[string]any{"ok": false, "error": map[string]string{"code": "reauth_required", "message": "민감한 변경을 위해 비밀번호를 다시 확인하세요"}})
+			return
+		}
 	}
 	payload := map[string]any{"cmd": in.Cmd, "label": in.Label, "cwd": "", "env": in.Env}
 	if in.Cwd != nil {
@@ -409,12 +432,25 @@ func (m *Manager) editProcess(w http.ResponseWriter, r *http.Request, p Principa
 			fail(w, 503, "설정을 디스크에 저장하지 못했습니다. 재시작하지 않았습니다")
 			return
 		}
-		if in.Protected != nil {
-			next, _ := cloneState(m.state)
-			meta.Protected = *in.Protected
+		if moving || in.Protected != nil {
+			next, err := cloneState(m.state)
+			if err != nil {
+				fail(w, 503, "명령은 저장되었으나 그룹·보호 설정을 저장하지 못했습니다. 재시작하지 않았습니다")
+				return
+			}
+			action, detail := "프로세스 보호 설정", "편집 보호 적용"
+			if moving {
+				action, detail = "프로세스 그룹 이동", meta.PG+" -> "+in.PG
+				meta.PG = in.PG
+			}
+			if in.Protected != nil {
+				meta.Protected = *in.Protected
+			}
+			// Move only the group binding. Preserve per-process overrides,
+			// public visibility and the execution identity.
 			next.Processes[id] = meta
-			if e = m.commit(next, u.Login, "프로세스 보호 설정", id, "편집 보호 적용"); e != nil {
-				fail(w, 503, "명령은 저장되었으나 보호 설정을 저장하지 못했습니다")
+			if e = m.commit(next, u.Login, action, id, detail); e != nil {
+				fail(w, 503, "명령은 저장되었으나 그룹·보호 설정을 저장하지 못했습니다. 재시작하지 않았습니다")
 				return
 			}
 		}

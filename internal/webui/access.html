@@ -79,12 +79,14 @@ dialog{padding:0;color:var(--text);border:1px solid #414e5e;background:var(--sur
 .locale-control select{height:32px;padding:4px 7px;border:1px solid var(--edge-strong);border-radius:6px;background:var(--surface2);color:var(--text);font-size:11px;min-width:90px}
 .auth-controls{display:flex;align-items:center;gap:9px;margin-left:auto}
 @media(max-width:480px){.auth-heading{flex-wrap:wrap;gap:8px}.auth-heading h1{width:100%;font-size:21px}.auth-controls{gap:5px;width:100%;justify-content:flex-end}.auth-controls .locale-control .ico{display:none}.locale-control select{min-width:75px;padding:4px 3px}.auth-help{padding:0 6px}.topbar .locale-control select{min-width:72px}.topbar .locale-control .ico{display:none}}
+#processMoveDialog .impact-stat{display:flex;align-items:center;justify-content:space-between;gap:10px}#processMoveDialog .impact-stat span{font-size:11px}#processMoveDialog .permission-labels{display:flex;gap:6px;flex-wrap:wrap;min-width:100px}
 </style>
 </head><body>
 
 <div id="root"></div>
 <dialog id="modal" aria-labelledby="modalTitle"></dialog>
 <dialog id="confirm" class="narrow" aria-labelledby="confirmTitle"></dialog>
+<dialog id="processMoveDialog" aria-labelledby="processMoveTitle"></dialog>
 <dialog id="authHelpDialog" class="auth-faq-dialog" aria-labelledby="authHelpTitle"></dialog>
 <dialog id="reauthDialog" class="narrow" aria-label="재인증"></dialog>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
@@ -253,7 +255,13 @@ const I18N = {
  '다음 화면에서 영향 확인 후 적용':['Preview the impact before applying','次の画面で影響を確認して適用'],
  '이 프로세스의 편집 권한이 없습니다.':['No permission to edit this process.','このプロセスの編集権限がありません。'],
  '프로세스를 생성할 수 있는 그룹이 없습니다.':['No group permits process creation.','作成可能なプロセスグループがありません。'],
- '그룹 이동은 별도 일괄 작업에서 처리합니다.':['Move groups using the bulk action.','グループ移動は一括操作で行います。'],
+ '그룹 변경 영향':['Group access changes','グループ変更の影響'],
+ '그룹 변경 영향을 먼저 확인하세요':['Review the group access changes first.','先にグループ変更の影響を確認してください。'],
+ '이동할 그룹이 없습니다':['Destination group not found.','移動先グループがありません。'],
+ '명령은 저장되었으나 그룹·보호 설정을 저장하지 못했습니다. 재시작하지 않았습니다':['Command saved, but group/protection settings could not be saved. No restart was requested.','コマンドは保存されましたが、グループ・保護設定は保存できませんでした。再起動は行っていません。'],
+ '그룹 변경 후 저장':['Save with new group','グループを変更して保存'],
+ '그룹 변경 후 저장·재시작':['Save & restart with new group','グループを変更して保存・再起動'],
+ '개별 예외 유지':['Keep process overrides','個別の例外を維持'],
  '비워 두면 기존 값 유지':['Leave blank to keep existing','空欄なら既存の値を維持'],
  'OS 계정 비밀번호':['OS account password','OSアカウントのパスワード'],
  '설정 편집 보호':['Protect settings from editing','設定の編集を保護'],
@@ -586,7 +594,7 @@ function localizeNode(node){
 let i18nRendering=false;
 function localizeAll(){if(i18nRendering)return;i18nRendering=true;try{
  document.documentElement.lang=locale;
- for(const el of [document.getElementById('root'),document.getElementById('modal'),document.getElementById('confirm'),document.getElementById('authHelpDialog'),document.getElementById('reauthDialog'),document.getElementById('toast')])if(el)localizeNode(el);
+ for(const el of [document.getElementById('root'),document.getElementById('modal'),document.getElementById('confirm'),document.getElementById('processMoveDialog'),document.getElementById('authHelpDialog'),document.getElementById('reauthDialog'),document.getElementById('toast')])if(el)localizeNode(el);
  for(const sel of document.querySelectorAll('#spLanguage'))sel.value=locale;
 }finally{i18nRendering=false;}}
 function setLocale(next){if(!['ko','en','ja'].includes(next))return;locale=next;
@@ -885,9 +893,25 @@ function processEditor(id){
  const eligible=db.processGroups.filter(g=>canCreate(u,g));if(!p&&!eligible.length){toast('프로세스를 생성할 수 있는 그룹이 없습니다.');return;}
  const v=p||{name:'',cmd:'',cwd:'',pg:eligible[0].id,account:'Service account',auto:false,protected:false,env:{}};
  const specific=v.account!=='Service account';
- openModal(p?'프로세스 편집':'새 프로세스','COMMAND CONFIGURATION',`<div class="fields"><div class="field"><label for="processName">이름</label><input name="name" id="processName" value="${esc(v.name)}" placeholder="표시 이름" maxlength="128"></div><div class="field"><label for="processCwd">작업 디렉터리</label><input id="processCwd" name="cwd" class="mono" value="${esc(pathForOS(v.cwd))}" placeholder="${state.os==='windows'?'D:\\services\\app':'/srv/app'}"></div><div class="field full"><label for="processCommand">명령어 <span class="required">*</span></label><textarea id="processCommand" name="cmd" required maxlength="4096">${esc(commandForOS(v.cmd))}</textarea></div><div class="field full"><label for="processGroup">프로세스 그룹</label><select name="pg" id="processGroup" ${p&&!isAdmin()?'disabled':''}>${(p?db.processGroups:eligible).map(g=>option(g.id,g.name,v.pg)).join('')}</select><p class="hint">소속 그룹의 권한을 상속합니다. ${p?'그룹 이동은 별도 일괄 작업에서 처리합니다.':''}</p></div></div><div class="rule"></div><div class="editor-section-title">EXECUTION</div><div class="exec-row"><div><label class="hint" style="display:block;margin-bottom:7px">실행 계정</label><div class="segment"><button type="button" data-act="editor-service" class="${!specific?'active':''}" ${isAdmin()?'':'disabled'}>${icon('server')}서비스 계정</button><button type="button" data-act="editor-specific" class="${specific?'active':''}" ${isAdmin()?'':'disabled'}>${icon('user')}지정 사용자</button></div></div><div class="auto-option"><span class="cluster">자동 시작 ${switchControl('auto',v.auto,'aria-label="자동 시작"')}</span><small>SpawnPoint 시작 시</small></div></div>${!isAdmin()?'<p class="hint" style="margin-top:8px">실행 계정 변경은 관리자만 가능합니다.</p>':''}<div class="fields" id="editorIdentity" style="margin-top:17px" ${specific?'':'hidden'}><div class="field"><label for="executionUser">사용자명</label><input id="executionUser" name="account" value="${specific?esc(accountForOS(v.account)):''}" placeholder="${state.os==='windows'?'.\\runner-user':'runner-user'}"><p class="hint">OS 실행 계정</p></div><div class="field"><label for="executionPassword">비밀번호</label><input id="executionPassword" type="password" name="executionPassword" autocomplete="off" placeholder="${specific?'비워 두면 기존 값 유지':'OS 계정 비밀번호'}"><p class="hint">저장된 실행 비밀번호는 표시하지 않습니다.</p></div></div>${isAdmin()?`<div style="margin-top:16px">${setting('설정 편집 보호','실행은 위임하되 명령·경로·환경변수 편집은 관리자만 허용합니다.',switchControl('protected',v.protected,'aria-label="프로세스 설정 편집 보호"'))}</div>`:''}<div class="rule"></div><details class="env-block"><summary>${icon('list')}환경변수 ${badge(Object.keys(v.env).length)}${icon('down')}</summary><div class="env-content"><div id="envRows">${Object.entries(v.env).map(([k,val])=>envRow(k,val)).join('')}</div>${button('변수 추가','add-env','quiet small','plus')}</div></details>`, `<span class="hint">변경은 다음 실행부터 적용</span><span class="spacer"></span>${button('취소','close-modal','quiet')}<button class="btn" type="submit" name="mode" value="save">저장</button><button class="btn primary" type="submit" name="mode" value="run">${icon('refresh')}${p?'저장 후 재시작':'저장 후 실행'}</button>`, 'process',{id:p?.id||null,specific,icon:'terminal'});
- // Editing group assignments is handled exclusively by the impact-preview move action.
- if(p)$('#processGroup').disabled=true;
+ openModal(p?'프로세스 편집':'새 프로세스','COMMAND CONFIGURATION',`<div class="fields"><div class="field"><label for="processName">이름</label><input name="name" id="processName" value="${esc(v.name)}" placeholder="표시 이름" maxlength="128"></div><div class="field"><label for="processCwd">작업 디렉터리</label><input id="processCwd" name="cwd" class="mono" value="${esc(pathForOS(v.cwd))}" placeholder="${state.os==='windows'?'D:\\services\\app':'/srv/app'}"></div><div class="field full"><label for="processCommand">명령어 <span class="required">*</span></label><textarea id="processCommand" name="cmd" required maxlength="4096">${esc(commandForOS(v.cmd))}</textarea></div><div class="field full"><label for="processGroup">프로세스 그룹</label><select name="pg" id="processGroup" ${p&&!isAdmin()?'disabled':''}>${(p?db.processGroups:eligible).map(g=>option(g.id,g.name,v.pg)).join('')}</select></div></div><div class="rule"></div><div class="editor-section-title">EXECUTION</div><div class="exec-row"><div><label class="hint" style="display:block;margin-bottom:7px">실행 계정</label><div class="segment"><button type="button" data-act="editor-service" class="${!specific?'active':''}" ${isAdmin()?'':'disabled'}>${icon('server')}서비스 계정</button><button type="button" data-act="editor-specific" class="${specific?'active':''}" ${isAdmin()?'':'disabled'}>${icon('user')}지정 사용자</button></div></div><div class="auto-option"><span class="cluster">자동 시작 ${switchControl('auto',v.auto,'aria-label="자동 시작"')}</span><small>SpawnPoint 시작 시</small></div></div>${!isAdmin()?'<p class="hint" style="margin-top:8px">실행 계정 변경은 관리자만 가능합니다.</p>':''}<div class="fields" id="editorIdentity" style="margin-top:17px" ${specific?'':'hidden'}><div class="field"><label for="executionUser">사용자명</label><input id="executionUser" name="account" value="${specific?esc(accountForOS(v.account)):''}" placeholder="${state.os==='windows'?'.\\runner-user':'runner-user'}"><p class="hint">OS 실행 계정</p></div><div class="field"><label for="executionPassword">비밀번호</label><input id="executionPassword" type="password" name="executionPassword" autocomplete="off" placeholder="${specific?'비워 두면 기존 값 유지':'OS 계정 비밀번호'}"><p class="hint">저장된 실행 비밀번호는 표시하지 않습니다.</p></div></div>${isAdmin()?`<div style="margin-top:16px">${setting('설정 편집 보호','실행은 위임하되 명령·경로·환경변수 편집은 관리자만 허용합니다.',switchControl('protected',v.protected,'aria-label="프로세스 설정 편집 보호"'))}</div>`:''}<div class="rule"></div><details class="env-block"><summary>${icon('list')}환경변수 ${badge(Object.keys(v.env).length)}${icon('down')}</summary><div class="env-content"><div id="envRows">${Object.entries(v.env).map(([k,val])=>envRow(k,val)).join('')}</div>${button('변수 추가','add-env','quiet small','plus')}</div></details>`, `<span class="hint">변경은 다음 실행부터 적용</span><span class="spacer"></span>${button('취소','close-modal','quiet')}<button class="btn" type="submit" name="mode" value="save">저장</button><button class="btn primary" type="submit" name="mode" value="run">${icon('refresh')}${p?'저장 후 재시작':'저장 후 실행'}</button>`, 'process',{id:p?.id||null,specific,icon:'terminal'});
+
+}
+// Keep the editor (including unsaved fields) open beneath the read-only review.
+// Cancel/Escape never saves or restarts. The server rejects stale reviewed policy.
+async function reviewProcessGroup(process,destination,revision,restart){
+ const preview=await adminRequest({action:'bulk',revision,ids:[process.id],destination,clear:false},'/api/access/preview');
+ const a=preview.impact,dlg=$('#processMoveDialog');
+ const permissionLabels=value=>value?value.split(/\s+/).map(word=>`<span>${esc(word)}</span>`).join(''):'—';
+ dlg.innerHTML=`<div class="dialog-layout"><header class="dialog-head"><div class="icon-box">${icon('folder')}</div><h2 id="processMoveTitle">그룹 변경 영향</h2></header><div class="dialog-body"><div class="cluster"><span translate="no">${esc(pg(process.pg)?.name||process.pg)}</span><span aria-hidden="true">→</span><strong translate="no">${esc(pg(destination)?.name||destination)}</strong></div><div class="impact-stats section-gap"><div class="impact-stat"><span>권한 확대</span><strong>${a.gained}</strong></div><div class="impact-stat"><span>권한 축소</span><strong>${a.lost}</strong></div></div><div class="table-scroll"><table><thead><tr><th>사용자</th><th>프로세스</th><th>추가</th><th>제거</th></tr></thead><tbody>${a.rows.map(r=>`<tr><td translate="no">${esc(r.user)}</td><td translate="no">${esc(r.process)}</td><td><div class="permission-labels">${permissionLabels(r.gained)}</div></td><td><div class="permission-labels">${permissionLabels(r.lost)}</div></td></tr>`).join('')||'<tr><td colspan="4">접근 권한 변화 없음</td></tr>'}</tbody></table></div>${a.truncated?'<p class="hint">처음 500개 변경을 표시합니다.</p>':''}</div><footer class="dialog-foot"><span class="hint">개별 예외 유지</span><span class="spacer"></span><button type="button" class="btn quiet" id="processMoveCancel">취소</button><button type="button" class="btn primary" id="processMoveApply">${restart?'그룹 변경 후 저장·재시작':'그룹 변경 후 저장'}</button></footer></div>`;
+ return new Promise(resolve=>{
+  let settled=false;
+  const finish=value=>{if(settled)return;settled=true;dlg.oncancel=null;dlg.onclose=null;dlg.close();dlg.innerHTML='';resolve(value);};
+  $('#processMoveCancel').onclick=()=>finish(null);
+  $('#processMoveApply').onclick=()=>finish(preview.revision);
+  dlg.oncancel=e=>{e.preventDefault();finish(null);};
+  dlg.onclose=()=>finish(null);
+  dlg.showModal();localizeAll();$('#processMoveCancel').focus();
+ });
 }
 function envRow(k='',v=''){return `<div class="env-row"><input name="envKey" aria-label="환경변수 이름" placeholder="KEY" value="${esc(k)}"><input name="envValue" aria-label="환경변수 값" placeholder="VALUE" value="${esc(v)}">${ib('환경변수 삭제','remove-env','x')}</div>`;}
 function bulkModal(reset=false){const targets=state.checked.map(proc).filter(Boolean);if(!targets.length)return;openModal(reset?'그룹 권한으로 일괄 복원':'프로세스 그룹 이동','BULK CHANGE',`${notice('<strong>'+targets.length+'개 프로세스</strong>를 선택했습니다. 적용 전 사용자별 접근 변화가 표시됩니다.','muted','layers')}<div class="field" style="margin-top:18px"><label for="batchGroup">${reset?'기존 그룹':'이동할 그룹'}</label>${reset?'<p class="hint">현재 소속 그룹은 바꾸지 않고 개별 예외만 제거합니다.</p>':`<select id="batchGroup" name="targetGroup">${db.processGroups.map(g=>option(g.id,g.name)).join('')}</select>`}</div>${!reset?`<div class="rule"></div><label class="check-pill"><input type="checkbox" name="clearExceptions">개별 예외도 제거하고 새 그룹 권한만 상속</label><p class="hint" style="margin-top:8px">기본은 기존 예외 유지입니다.</p>`:''}<div class="rule"></div>${targets.map(p=>`<div class="cluster" style="padding:8px 0">${icon('terminal')}${esc(p.name)}<span class="spacer"></span>${badge(pg(p.pg).name)}${Object.keys(p.overrides).length?badge('예외 있음','amber'):''}</div>`).join('')}`,modalFooter('변경 영향 확인'),'batch',{targets:targets.map(p=>p.id),reset,icon:'layers'});}
@@ -1000,9 +1024,18 @@ document.addEventListener('submit',async e=>{
  case 'process':{
   const old=m.id?proc(m.id):null;const keys=form.getAll('envKey'),values=form.getAll('envValue'),env=Object.create(null);
   for(let i=0;i<keys.length;i++){const k=String(keys[i]).trim();if(!k&&values[i]==='')continue;if(!k||/[=\0]/.test(k)||Object.hasOwn(env,k))throw new Error('환경변수 이름이 없거나 중복되었습니다.');env[k]=String(values[i]);}
-  const payload={label:String(form.get('name')||'').trim(),cmd:String(form.get('cmd')||'').trim(),cwd:String(form.get('cwd')||''),env,auto_start:form.has('auto'),group_id:old?.pg||String(form.get('pg')),start:false};
+  const payload={label:String(form.get('name')||'').trim(),cmd:String(form.get('cmd')||'').trim(),cwd:String(form.get('cwd')||''),env,auto_start:form.has('auto'),group_id:isAdmin()?String(form.get('pg')||old?.pg||''):old?.pg||String(form.get('pg')),start:false};
   if(isAdmin()){payload.protected=form.has('protected');if(m.specific){payload.run_as={mode:'user',username:String(form.get('account')||'').trim()};const pw=String(form.get('executionPassword')||'');if(pw)payload.run_as.password=pw;}else if(old&&old.account!=='Service account')payload.run_as={mode:'service'};}
-  const data=await request(m.id?'/processes/'+encodeURIComponent(m.id):'/processes',payload,m.id?'PUT':'POST');const id=data.process.id;
+  if(old&&payload.group_id!==old.pg){
+   const reviewed=await reviewProcessGroup(old,payload.group_id,m.revision,submitter?.value==='run');
+   if(reviewed===null)break;
+   payload.revision=reviewed;
+  }
+  const url=m.id?'/processes/'+encodeURIComponent(m.id):'/processes';
+  let data;
+  try{data=await request(url,payload,m.id?'PUT':'POST');}
+  catch(error){if(error.code!=='reauth_required')throw error;await reauthenticate();data=await request(url,payload,'PUT');}
+  const id=data.process.id;
   if(!data.persisted)throw new Error('설정을 저장하지 못했습니다. 실행하지 않았습니다.');
   let result=data;if(submitter?.value==='run')result=await request('/processes/'+encodeURIComponent(id)+'/'+(m.id?'restart':'run'),{});
   state.procSelected=id;await saved(submitter?.value==='run'?'저장 후 실행을 요청했습니다.':'설정을 저장했습니다.');
@@ -1011,7 +1044,12 @@ document.addEventListener('submit',async e=>{
  case 'token':{const data=await adminRequest({action:'token.create',revision,name:String(form.get('name')||'').trim(),owner:String(form.get('owner')),scope:String(form.get('scope')),level:Number(form.get('level')),create:form.has('create'),expiry:String(form.get('expiry'))});await saved('토큰을 생성했습니다.');openModal('API 토큰 생성 완료','SHOWN ONCE',`${notice('이 값은 다시 표시되지 않습니다. 안전한 곳에 보관하세요.','amber','key')}<textarea id="newTokenValue" readonly class="mono" style="margin-top:16px;width:100%">${esc(data.secret)}</textarea>`,button('복사','copy-token','primary')+button('닫기','close-modal','quiet'),'token-result',{icon:'key'});break;}
  case 'password':{if(form.get('new')!==form.get('repeat'))throw new Error('새 비밀번호가 일치하지 않습니다.');const data=await request('/auth/password',{password:String(form.get('old')||''),new_password:String(form.get('new')||'')});app.csrf=data.csrf;await saved('비밀번호를 변경했습니다. 다른 세션과 기존 토큰은 무효화됐습니다.');break;}
  }
- }catch(error){if(f.id==='loginForm'||f.id==='setupForm'||f.id==='setupOSForm')$('#loginError').textContent=error.message;else handleError(error);}
+ }catch(error){
+  if(error.status===409&&modalState?.kind==='process'){
+   try{await loadState();if(modalState?.kind==='process')modalState.revision=app.revision;}catch(_){}
+  }
+  if(f.id==='loginForm'||f.id==='setupForm'||f.id==='setupOSForm')$('#loginError').textContent=error.message;else handleError(error);
+ }
  finally{f.dataset.busy='0';buttons.forEach(b=>b.disabled=false);}
 });
 $('#authHelpDialog').addEventListener('click',e=>{if(e.target.id==='authHelpDialog')e.target.close();});
