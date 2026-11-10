@@ -650,13 +650,33 @@ function reauthenticate(){return new Promise((resolve,reject)=>{
  });}
 function handleError(error){if(error.status===401){app.csrf='';state.actor=null;state.policyDirty=false;state.policyDraft=null;closeModal(true);state.route='/login';render();}if($('#modal').open&&$('#modalError'))modalError(error.message);else toast(error.message);}
 async function saved(message='저장했습니다.') {closeModal(true);state.policyDirty=false;state.policyDraft=null;await refresh();toast(message);}
-function logPanel(p){return `<section class="panel log-panel"><div class="log-head">${icon('terminal')}<h3>${esc(p.name)}</h3><span class="muted">로그</span><div class="spacer"></div>${button('처음부터','logs-start','quiet small')}${button(logState.paused?'더 읽기':'일시 정지','logs-toggle','quiet small')}<span class="hint mono">LIVE</span></div><pre class="log-body" id="liveLog" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto">${esc(logState.id===p.id?logState.text:'로그를 읽는 중…')}</pre></section>`;}
+function logPanel(p){return `<section class="panel log-panel" data-process-id="${esc(p.id)}"><div class="log-head">${icon('terminal')}<h3>${esc(p.name)}</h3><span class="muted">로그</span><div class="spacer"></div>${button('처음부터','logs-start','quiet small')}${button(logState.paused?'더 읽기':'일시 정지','logs-toggle','quiet small')}<span class="hint mono">LIVE</span></div><pre class="log-body" id="liveLog" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto">${esc(logState.id===p.id?logState.text:'로그를 읽는 중…')}</pre></section>`;}
 let logBusy=false;
 async function pollLog(force=false){
- if(logBusy||state.route!=='/processes'||!state.procSelected)return;const p=proc(state.procSelected);if(!p||!access(current(),p).logs)return;
- if(logState.id!==p.id)logState={id:p.id,offset:null,text:'',paused:false};if(logState.paused&&!force)return;
- logBusy=true;const id=p.id;try{const data=await request('/processes/'+encodeURIComponent(id)+'/logs'+(logState.offset===null?'':'?offset='+logState.offset));if(state.procSelected!==id)return;if(data.reset)logState.text='';logState.text=(logState.text+(data.text||'')).split('\n').slice(-500).join('\n');logState.offset=data.next_offset;logState.paused=!!data.truncated;const view=$('#liveLog');if(view){view.textContent=logState.text||'아직 출력이 없습니다.';view.scrollTop=view.scrollHeight;}}
- catch(e){if($('#liveLog'))$('#liveLog').textContent=e.message;}finally{logBusy=false;}
+ if(logBusy||state.route!=='/processes'||!state.procSelected)return;
+ const p=proc(state.procSelected);if(!p||!access(current(),p).logs)return;
+ if(logState.id!==p.id)logState={id:p.id,offset:null,text:'',paused:false};
+ if(logState.paused&&!force)return;
+ logBusy=true;const id=p.id;
+ try{
+  const data=await request('/processes/'+encodeURIComponent(id)+'/logs'+(logState.offset===null?'':'?offset='+logState.offset));
+  if(state.route!=='/processes'||state.procSelected!==id)return;
+  if(data.reset)logState.text='';
+  logState.text=(logState.text+(data.text||'')).split('\n').slice(-500).join('\n');
+  logState.offset=data.next_offset;logState.paused=!!data.truncated;
+  const view=$('#liveLog');
+  if(view){
+   const next=logState.text||'아직 출력이 없습니다.';
+   if(view.textContent!==next){
+    // Follow only while the viewer is already near the live end.
+    const follow=view.scrollHeight-view.clientHeight-view.scrollTop<=24;
+    const previousTop=view.scrollTop;
+    view.textContent=next;
+    view.scrollTop=follow?view.scrollHeight:previousTop;
+   }
+  }
+ }catch(e){const view=$('#liveLog');if(view&&view.textContent!==e.message)view.textContent=e.message;}
+ finally{logBusy=false;}
 }
 async function serverImpact(payload){
  const data=await adminRequest(payload,'/api/access/preview');const a=data.impact;
@@ -717,13 +737,25 @@ function navigate(route,force=false){
  if(route==='/account'&&!current())route='/login';
  state.route=route;history.replaceState(null,'','#'+route);closeMenu();render();window.scrollTo(0,0);
 }
-function render(){
+function render(preserveLog=false){
+ // Background status refreshes must preserve the log viewport in place.
+ const existingLog=preserveLog?$('#root .log-panel'):null;
+ const existingLogScroll=existingLog?.querySelector('#liveLog')?.scrollTop??0;
  if(state.route.startsWith('/admin')&&!isAdmin())state.route='/processes';
  renderRail();
  if(state.route==='/login'){$('#root').innerHTML=renderLogin();localizeAll();return;}
  const labels={'/processes':'프로세스','/account':'내 계정','/admin':'관리 개요','/admin/users':'사용자','/admin/groups':'그룹','/admin/permissions':'프로세스 권한','/admin/security':'인증·보안','/admin/audit':'감사 기록'};
  const user=current();
- $('#root').innerHTML=`<div class="mobile-mask" data-act="close-menu"></div><div class="shell"><aside class="sidebar" aria-label="주 메뉴"><div class="mobile-menu-close">${ib('메뉴 닫기','close-menu','x')}</div>${brand()}<nav><div class="nav-group"><span class="nav-label">WORKSPACE</span>${nav('/processes','프로세스','terminal')}${user?nav('/account','내 계정','user'):''}</div>${isAdmin()?`<div class="nav-group"><span class="nav-label">ADMINISTRATION</span>${nav('/admin','관리 개요','grid')}${nav('/admin/users','사용자','users')}${nav('/admin/groups','그룹','layers')}${nav('/admin/permissions','프로세스 권한','shield')}${nav('/admin/security','인증·보안','key')}${nav('/admin/audit','감사 기록','history')}</div>`:''}</nav><div class="sidebar-footer"><div class="server-name"><span class="dot green"></span>${esc(app.runtime.server)}</div><div class="hint">${state.os==='windows'?'Windows':'Linux'} · 프로세스 관리 서버</div></div></aside><section class="workspace"><header class="topbar">${ib('메뉴 열기','menu','menu','class="menu-toggle"').replace('class="icon-btn"','class="icon-btn menu-toggle"').replace('class="menu-toggle"','')}<div class="breadcrumb">${state.route.startsWith('/admin')?'관리자':'워크스페이스'}${icon('chevron')}<span class="current">${labels[state.route]||'프로세스'}</span></div><div class="spacer"></div>${languageSelect()}<span class="connection">${icon('lock')}${state.transport==='https'?'HTTPS':state.transport==='local'?'LOCALHOST':'HTTP'}</span><button class="user-button" data-act="${user?'account':'login'}"><div class="avatar">${user?esc(userIdentity(user).slice(0,2).toUpperCase()):'—'}</div><span><strong>${user?esc(user.name):'비로그인'}</strong><small>${user?roles[user.role].label:'공개 상태만 조회'}</small></span></button>${ib(user?'로그아웃':'로그인',user?'logout':'login','logout')}</header><main class="page" id="mainContent">${view()}</main></section></div>`;localizeAll();
+ $('#root').innerHTML=`<div class="mobile-mask" data-act="close-menu"></div><div class="shell"><aside class="sidebar" aria-label="주 메뉴"><div class="mobile-menu-close">${ib('메뉴 닫기','close-menu','x')}</div>${brand()}<nav><div class="nav-group"><span class="nav-label">WORKSPACE</span>${nav('/processes','프로세스','terminal')}${user?nav('/account','내 계정','user'):''}</div>${isAdmin()?`<div class="nav-group"><span class="nav-label">ADMINISTRATION</span>${nav('/admin','관리 개요','grid')}${nav('/admin/users','사용자','users')}${nav('/admin/groups','그룹','layers')}${nav('/admin/permissions','프로세스 권한','shield')}${nav('/admin/security','인증·보안','key')}${nav('/admin/audit','감사 기록','history')}</div>`:''}</nav><div class="sidebar-footer"><div class="server-name"><span class="dot green"></span>${esc(app.runtime.server)}</div><div class="hint">${state.os==='windows'?'Windows':'Linux'} · 프로세스 관리 서버</div></div></aside><section class="workspace"><header class="topbar">${ib('메뉴 열기','menu','menu','class="menu-toggle"').replace('class="icon-btn"','class="icon-btn menu-toggle"').replace('class="menu-toggle"','')}<div class="breadcrumb">${state.route.startsWith('/admin')?'관리자':'워크스페이스'}${icon('chevron')}<span class="current">${labels[state.route]||'프로세스'}</span></div><div class="spacer"></div>${languageSelect()}<span class="connection">${icon('lock')}${state.transport==='https'?'HTTPS':state.transport==='local'?'LOCALHOST':'HTTP'}</span><button class="user-button" data-act="${user?'account':'login'}"><div class="avatar">${user?esc(userIdentity(user).slice(0,2).toUpperCase()):'—'}</div><span><strong>${user?esc(user.name):'비로그인'}</strong><small>${user?roles[user.role].label:'공개 상태만 조회'}</small></span></button>${ib(user?'로그아웃':'로그인',user?'logout':'login','logout')}</header><main class="page" id="mainContent">${view()}</main></section></div>`;
+ if(existingLog&&state.route==='/processes'){
+  const replacement=$('#root .log-panel');
+  if(replacement&&replacement.dataset.processId===existingLog.dataset.processId){
+   replacement.replaceWith(existingLog);
+   const scroller=existingLog.querySelector('#liveLog');
+   if(scroller)scroller.scrollTop=existingLogScroll;
+  }
+ }
+ localizeAll();
 }
 function brand(){return `<div class="brand"><div class="icon-box">${icon('terminal')}</div><div><div class="brand-name">Spawn<b>Point</b></div><div class="eyebrow">PROCESS CONTROL</div></div></div>`;}
 function nav(route,label,i){return `<button class="nav-item ${state.route===route?'active':''}" data-nav="${route}" ${state.route===route?'aria-current="page"':''}>${icon(i)}${label}</button>`;}
@@ -1059,7 +1091,7 @@ $('#reauthDialog').addEventListener('cancel',()=>{reauthResolve?.reject(new Erro
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.matches('[data-process-row]')){state.procSelected=e.target.dataset.processRow;render();pollLog();}if(e.key==='Escape')closeMenu();});
 window.addEventListener('hashchange',()=>{if(app.ready)navigate(location.hash.slice(1)||'/login');});
 let heartbeatAt=0;['pointerdown','keydown'].forEach(event=>document.addEventListener(event,()=>{if(state.actor&&Date.now()-heartbeatAt>60000){heartbeatAt=Date.now();request('/auth/heartbeat',{}).catch(handleError);}}));
-let refreshing=false;setInterval(async()=>{if(!app.ready||refreshing||document.hidden||state.route!=='/processes'||$('#modal').open||$('#confirm').open||document.activeElement?.matches('input,select,textarea'))return;refreshing=true;try{await loadState();render();await pollLog();}catch(e){handleError(e);}finally{refreshing=false;}},4000);
+let refreshing=false;setInterval(async()=>{if(!app.ready||refreshing||document.hidden||state.route!=='/processes'||$('#modal').open||$('#confirm').open||document.activeElement?.matches('input,select,textarea'))return;refreshing=true;try{await loadState();render(true);await pollLog();}catch(e){handleError(e);}finally{refreshing=false;}},4000);
 setInterval(()=>{if(!document.hidden)pollLog();},1500);
 boot();
 </script>
