@@ -68,6 +68,17 @@ dialog{padding:0;color:var(--text);border:1px solid #414e5e;background:var(--sur
 .auth-token-form .btn.primary{width:100%;margin-top:6px}
 .auth-token-form .auth-command{margin-bottom:18px}
 @media(max-width:420px){.auth-faq-dialog .dialog-body{padding:12px 17px 18px}.auth-command-actions{align-items:stretch}.auth-command-actions .btn{flex:1}}
+
+/* Compact registration: authentication -> identity -> privileges -> optional groups */
+.auth-kind{margin:0 0 18px}.auth-kind select{width:100%}.user-identity-fields{row-gap:16px}
+.user-identity-fields .field[hidden]{display:none!important}
+.compact-groups{border-top:1px solid var(--edge);padding-top:15px;margin-top:2px}
+.compact-groups .checks{margin-top:8px;min-height:0}
+.locale-control{display:inline-flex;gap:6px;align-items:center;color:var(--secondary);flex:none}
+.locale-control .ico{height:14px;width:14px}
+.locale-control select{height:32px;padding:4px 7px;border:1px solid var(--edge-strong);border-radius:6px;background:var(--surface2);color:var(--text);font-size:11px;min-width:90px}
+.auth-controls{display:flex;align-items:center;gap:9px;margin-left:auto}
+@media(max-width:480px){.auth-heading{flex-wrap:wrap;gap:8px}.auth-heading h1{width:100%;font-size:21px}.auth-controls{gap:5px;width:100%;justify-content:flex-end}.auth-controls .locale-control .ico{display:none}.locale-control select{min-width:75px;padding:4px 3px}.auth-help{padding:0 6px}.topbar .locale-control select{min-width:72px}.topbar .locale-control .ico{display:none}}
 </style>
 </head><body>
 
@@ -82,6 +93,509 @@ dialog{padding:0;color:var(--text);border:1px solid #414e5e;background:var(--sur
 /* Standalone UI prototype. No fetch, authentication, OS execution or persistent storage.
    Baseline: horrible-gh/SpawnPoint main 42de3f87 (2026-11-09).
    Rule choices below are proposals, not existing server enforcement. */
+/* Presentation-only i18n. Never changes login identity, permission IDs, or server data.
+   Source strings remain Korean to preserve existing API behavior; translations
+   are applied only to UI nodes and visible labels. */
+const I18N = {
+ 'OS 계정 인증은 non-root 서비스 계정에서 실행하세요':['OS authentication requires a non-root service account.','OS認証には非rootのサービスアカウントが必要です。'],
+ 'Windows 인증 API를 사용할 수 없습니다':['Windows authentication API is unavailable.','Windows認証APIが利用できません。'],
+ '서버에서 확인 가능한 OS 계정을 입력하세요':['Enter an OS account recognized by the server.','サーバーが認識できるOSアカウントを入力してください。'],
+ '서버에서 확인 가능한 OS 계정을 입력하세요.':['Enter an OS account recognized by the server.','サーバーが認識できるOSアカウントを入力してください。'],
+ '역할은 작업의 상한입니다. 접근 대상은 그룹·프로세스 권한으로 정합니다.':['Roles set the maximum permissions; resource access is assigned separately.','ロールは権限の上限を決めます。対象へのアクセスは別途設定します。'],
+ 'OS 사용자 식별자는 SpawnPoint 사용자에 연결':['OS identities are linked to SpawnPoint users','OSユーザーIDをSpawnPointユーザーに連携'],
+ '정지·역할 변경 시 세션 및 토큰 권한 재평가':['Sessions and tokens are rechecked when roles change','ロール変更・停止時にセッションとトークンを再評価'],
+ '정지·역할·비밀번호 변경 시 기존 세션 및 토큰이 무효화됩니다.':['Existing sessions and tokens are revoked after account changes.','停止・ロール・パスワード変更時にセッションとトークンを無効化します。'],
+ '관리자가 그룹 권한을 부여하기 전까지 비공개':['Private until the administrator grants access','管理者が権限を付与するまで非公開'],
+ '기존 프로세스':['Existing processes','既存のプロセス'],
+ '적용 대상':['Applies to','適用対象'],
+ '개별 예외는 그대로 유지':['Overrides are preserved','個別例外を維持'],
+ '그룹 변경은 상속 중인 프로세스에 반영됩니다.':['Group changes apply to inheriting processes.','グループ変更は継承中のプロセスに反映されます。'],
+ '하며, 생성 권한은 개발자 역할 이상에만 적용됩니다.':['; creation is limited to developers and administrators.','。作成権限は開発者以上のロールに適用されます。'],
+ '이 프로세스에서 지정한 항목만 그룹 기본값을 대체합니다.':['Only overrides on this process replace group defaults.','このプロセスで指定した項目のみグループの基本値を置き換えます。'],
+ '으로 되돌리면 해당 예외가 제거됩니다.':[' removes its override.','に戻すと例外が削除されます。'],
+ '두 로그인 방식 중 적어도 하나는 활성화되어야 합니다. 변경 사항은 서버에 저장됩니다.':['At least one sign-in method must stay enabled.','最低１つのログイン方式を有効にしてください。'],
+ '도 사용자명·비밀번호를 직접 입력할 수 있습니다. Windows와 Linux 모두 지원할 수 있으며, 자동 로그인은 별도의 선택 기능입니다.':[' supports username and password on Windows and Linux. Automatic SSO is separate.','もユーザー名とパスワードで認証できます。自動SSOは別機能です。'],
+ '어느 방식으로 로그인하든 SpawnPoint 역할·그룹·프로세스 권한은 동일하게 적용됩니다.':['Roles, groups and process access apply to either sign-in method.','ログイン方式によらずロール・グループ・プロセス権限は共通です。'],
+ '관리자 PowerShell에서 다음 명령을 실행하세요.':['Run this command in Administrator PowerShell.','管理者PowerShellで次のコマンドを実行してください。'],
+ 'sudo 터미널에서 다음 명령을 실행하세요.':['Run this command using sudo on the server.','サーバーのsudoターミナルで次のコマンドを実行してください。'],
+ '서버에서 다음 명령을 실행하세요.':['Run this on the server.','サーバーで次のコマンドを実行してください。'],
+ '으로 토큰을 확인한 후, 아래 버튼을 이용하세요.':[' to view the token, then use the button below.','でトークンを確認してから、下のボタンを押してください。'],
+ '실제 권한':['Effective permissions','実効権限'],
+ '프로세스 그룹 저장':['Process group saved','プロセスグループを保存'],
+ '프로세스 생성 요청':['Process creation requested','プロセス作成要求'],
+ '프로세스 작업 결과':['Process action result','プロセス操作結果'],
+ '프로세스 작업 요청':['Process action requested','プロセス操作要求'],
+ '프로세스 생성':['Process created','プロセスを作成'],
+ '사용자 그룹 변경':['User group updated','ユーザーグループ変更'],
+ '사용자 저장':['User saved','ユーザーを保存'],
+ '최초 관리자 생성':['Initial admin created','初回管理者を作成'],
+ '권한 상속 후 등록':['Registered with inherited access','継承権限で登録'],
+ '설정·비밀번호 비기록':['Settings and passwords omitted','設定・パスワードは記録しない'],
+ '비밀값 기록 안 함':['Secrets not logged','機密値は記録しない'],
+ '사용자 정지':['User suspended','ユーザー停止'],
+ '로그인 실패':['Sign-in failed','ログイン失敗'],
+ '로그인 성공':['Signed in','ログイン成功'],
+ '권한 변경 요청':['Permission change requested','権限変更要求'],
+ '권한 변경 적용':['Permissions updated','権限変更適用'],
+ '계정 설정 변경':['Account settings changed','アカウント設定変更'],
+ '정지된 사용자':['Suspended user','停止中のユーザー'],
+ 'OS 연결 사용자 수정':['OS-linked user updated','OS連携ユーザー更新'],
+ '단축키':['Shortcuts','ショートカット'],
+ '변경 없음':['No changes','変更なし'],
+ '재인증을 취소했습니다.':['Reauthentication cancelled.','再認証をキャンセルしました。'],
+ '처음부터':['From beginning','最初から'], '더 읽기':['Resume','再開'], '일시 정지':['Pause','一時停止'],
+ '로그를 읽는 중…':['Loading logs…','ログを読み込み中…'], '아직 출력이 없습니다.':['No output yet.','まだ出力がありません。'],
+ '변경 적용':['Apply changes','変更を適用'],
+ '서버의 현재 권한으로 계산했습니다. 적용 전에 다른 설정이 변경되면 다시 확인해야 합니다.':['Calculated from current server permissions. Review if settings changed.','現在のサーバー権限に基づく結果です。設定が変わった場合は再確認してください。'],
+ '프로세스를 실행하지 못했습니다.':['Process could not start.','プロセスを実行できませんでした。'],
+ '실제 프로세스와 하위 프로세스에 적용됩니다.':['This affects the process and its children.','この操作はプロセスと子プロセスに適用されます。'],
+ '인증된 사용자 없음':['No authenticated user','認証済みユーザーなし'],
+ '관리자 전체 권한':['Full administrator access','管理者の全権限'],
+ '사용자 직접 설정':['Direct user rule','ユーザー個別設定'],
+ '사용자 그룹의 명시적 거부':['User-group deny','ユーザーグループによる明示的拒否'],
+ '기본 거부 · 허용 규칙 없음':['Default deny · no allow rule','デフォルト拒否・許可ルールなし'],
+ '공개 상태 조회':['Public status view','公開状態の閲覧'], '비공개':['Private','非公開'],
+ '정지된 계정':['Suspended account','停止されたアカウント'],
+ '이 화면을 나가면 저장하지 않은 권한 변경이 사라집니다.':['Leaving discards unsaved permission changes.','画面を離れると未保存の権限変更は失われます。'],
+ '공개 상태만 조회':['View public status only','公開状態のみ閲覧'],
+ '로그아웃':['Sign out','ログアウト'], '관리자 PowerShell':['Administrator PowerShell','管理者PowerShell'],
+ 'sudo 터미널':['sudo terminal','sudoターミナル'],
+ '사용자, 권한, 운영 이력을 한곳에서 확인합니다.':['Overview of users, access, and activity.','ユーザー・権限・操作履歴の概要。'],
+ '사용자 역할':['User roles','ユーザーロール'],
+ '전체 기능 및 사용자 관리':['Full access and user management','全機能とユーザー管理'],
+ '생성 · 편집 · 실행':['Create · edit · run','作成・編集・実行'],
+ '편집 · 실행':['Edit · run','編集・実行'],
+ '전체 기록':['All records','全記録'], '접근 정책':['Access policies','アクセス方針'],
+ 'OS 계정 + 자체 계정':['OS + local accounts','OS + 独自アカウント'],
+ 'OS 계정만':['OS accounts only','OSアカウントのみ'],
+ '자체 계정만':['Local accounts only','独自アカウントのみ'],
+ '비로그인 접근 차단':['Guest access blocked','ゲストアクセス禁止'],
+ '공개 프로세스의 로그 조회 허용':['Public log access enabled','公開ログ閲覧が許可されています'],
+ '로그 · 명령어 · 실행 계정은 비공개':['Logs, commands and account data are private','ログ・コマンド・実行アカウントは非公開'],
+ '보호 프로세스: 관리자만 설정 편집':['Protected: admin-only editing','保護対象：設定編集は管理者のみ'],
+ '편집 권한 없음':['No editing permission','編集権限なし'],
+ '프로세스 삭제':['Delete process','プロセスを削除'],
+ '허용된 프로세스만 표시됩니다.':['Only accessible processes are shown.','アクセス可能なプロセスのみ表示します。'],
+ '나':['Me','自分'],
+ '사용자와 프로세스를 각각 묶어 권한을 한 번에 관리합니다.':['Manage user and process groups in one place.','ユーザーとプロセスのグループをまとめて管理します。'],
+ '그룹 편집':['Edit group','グループを編集'],
+ '상태 공개':['Public status','状態を公開'],
+ '그룹 기본 권한':['Group defaults','グループ基本権限'],
+ '개별 예외':['Overrides','個別例外'],
+ '그룹 기본 권한 · 전체 상속':['Group defaults · inherited','グループ基本権限・すべて継承'],
+ '신규 프로세스에도 적용':['Also applies to new processes','新規プロセスにも適用'],
+ '상속값은 변경하지 않음':['Inherited values stay unchanged','継承値は変更しない'],
+ '개별 설정':['Custom rule','個別設定'],
+ '그룹 기본':['Group default','グループ既定'],
+ '사용자 / 그룹 추가':['Add user / group','ユーザー・グループを追加'],
+ '실제 권한 미리보기':['Effective access preview','実効権限プレビュー'],
+ '그룹 기본값 기준':['Based on group defaults','グループ基本値に基づく'],
+ '보호됨 · 편집은 관리자만':['Protected · admin-only editing','保護・編集は管理者のみ'],
+ '개별 예외 반영':['Overrides applied','個別例外を反映'],
+ '그룹 권한 상속':['Group inheritance','グループ権限を継承'],
+ '저장 전 변경안을 기준으로 계산합니다.':['Calculated from unsaved changes.','未保存の変更を基に計算します。'],
+ '개별 프로세스의 예외·보호는 대상을 선택해 확인하세요.':['Select a process to view its overrides.','個別例外・保護は対象を選択して確認します。'],
+ '프로세스 생성은 소속 그룹 권한을 기준으로 판단합니다.':['Creation depends on group permissions.','プロセス作成は所属グループ権限で判定します。'],
+ '선택한 프로세스 1개만 적용':['Applies only to the selected process','選択したプロセス１件のみに適用'],
+ '되돌리기':['Revert','元に戻す'], '변경 영향 확인':['Preview changes','変更の影響を確認'],
+ '서버 정책':['Server policy','サーバーポリシー'],
+ 'Windows: 운영체제 LogonUser / Linux: PAM 인증. 미리 등록한 OS 신원을 SpawnPoint 사용자에 연결합니다.':['Windows LogonUser / Linux PAM authentication. Link a pre-registered OS identity.','WindowsはLogonUser、LinuxはPAMで認証し、登録済みOSユーザーと連携します。'],
+ '서버 OS 계정 없이 SpawnPoint 내부 사용자 ID / 비밀번호로 로그인합니다.':['Sign in with a separate SpawnPoint ID and password.','SpawnPoint独自のIDとパスワードでログインします。'],
+ '통합 인증 자동 로그인은 이 버전에 포함되지 않습니다. 두 계정 종류 모두 ID/비밀번호 로그인을 지원합니다.':['Automatic SSO is not available in this version. Both methods use username/password.','このバージョンでは自動SSOは未対応です。どちらもIDとパスワードを使用します。'],
+ '마지막 활동 이후 세션을 종료합니다.':['Ends the session after inactivity.','一定時間操作がない場合セッションを終了します。'],
+ '사용자·권한·실행 계정 변경 시 다시 확인합니다.':['Recheck credentials for sensitive changes.','重要な変更時に再認証します。'],
+ '반복 실패 시 일시적으로 로그인을 제한합니다.':['Repeated failures temporarily block sign-in.','認証失敗が続くと一時的にログインを制限します。'],
+ '기존 세션과 API 토큰도 새 권한으로 재평가합니다.':['Existing sessions and tokens are reevaluated.','既存のセッションやトークンも再評価します。'],
+ '공개한 프로세스의 상태만 보여줍니다.':['Show status of published processes only.','公開プロセスの状態のみ表示します。'],
+ '공개 프로세스 로그':['Public process logs','公開プロセスのログ'],
+ '로그에 민감한 정보가 포함될 수 있습니다. 기본은 비공개입니다.':['Logs may contain secrets and are private by default.','ログに機密情報が含まれる場合があります。初期設定では非公開です。'],
+ '생성·편집·실행·타 사용자 실행':['Create, edit, run and run-as-user','作成・編集・実行・別ユーザー実行'],
+ '비로그인 상태에서는 항상 금지됩니다.':['Not available to guests.','ゲストには常に禁止です。'],
+ '허용 불가':['Not allowed','許可不可'],
+ '공개할 프로세스 그룹':['Public process groups','公開するプロセスグループ'],
+ '상태만 공개':['Status only','状態のみ公開'],
+ '등록된 실행 계정':['Registered execution accounts','登録済み実行アカウント'],
+ '비밀번호 비표시':['Password hidden','パスワード非表示'],
+ '설정 보기':['View settings','設定を見る'],
+ '실행만 위임한 프로세스는 고정된 명령을 실행합니다. 실행파일·스크립트 폴더의 OS 쓰기 권한도 함께 제한해야 합니다. 서비스 계정으로 명령을 편집·생성하는 권한은 신뢰하는 사용자에게만 부여하세요.':['Run-only users execute fixed commands. Restrict OS write access to scripts too.','実行のみ許可されたユーザーは固定コマンドを実行します。スクリプトのOS書込権限も制限してください。'],
+ '삭제된 사용자':['Deleted user','削除済みユーザー'],
+ '폐기':['Revoke','無効化'],
+ '누가 어떤 대상에 무엇을 했는지 확인합니다.':['Review who did what and when.','誰が何をしたかを確認します。'],
+ '모든 작업':['All actions','すべての操作'],
+ '권한':['Permissions','権限'], '프로세스 작업':['Process actions','プロセス操作'],
+ '권한 거부':['Access denied','アクセス拒否'],
+ '성공':['Success','成功'], '거부':['Denied','拒否'],
+ '기록 상세':['Record details','記録の詳細'],
+ '역할과 로그인 세션을 관리합니다.':['Manage your role and sign-in sessions.','ロールとログインセッションを管理します。'],
+ 'SpawnPoint 사용자 DB':['SpawnPoint user database','SpawnPointユーザーデータベース'],
+ 'OS 비밀번호는 운영체제에서 변경하세요.':['Change the OS password in your operating system.','OSパスワードはOS側で変更してください。'],
+ '로그인 세션':['Sign-in sessions','ログインセッション'],
+ '현재':['Current','現在'],
+ '다른 세션 모두 종료':['End other sessions','他のセッションを終了'],
+ '변경 사항을 닫을까요?':['Discard changes?','変更を破棄しますか？'],
+ '저장하지 않은 입력이 사라집니다.':['Unsaved input will be lost.','未保存の入力は失われます。'],
+ '저장하지 않고 닫기':['Discard','破棄'],
+ '역할과 실제 권한':['Roles and effective permissions','ロールと実効権限'],
+ '상태·로그 조회':['View status and logs','状態・ログ閲覧'],
+ '실행·중지·재시작':['Run, stop, restart','実行・停止・再起動'],
+ '명령·설정 편집':['Edit commands and settings','コマンド・設定編集'],
+ '프로세스 생성':['Create processes','プロセス作成'],
+ '삭제·권한·사용자 관리':['Delete and manage access/users','削除・権限・ユーザー管理'],
+ '역할만으로 모든 프로세스에 접근할 수는 없습니다. 관리자 외에는 대상 그룹·프로세스의 허용 범위 안에서만 작업할 수 있습니다.':['Roles alone do not grant process access.','ロールだけではすべてのプロセスにアクセスできません。'],
+ '권한 적용 규칙':['Permission evaluation','権限評価ルール'],
+ '사용자 역할은 변경하지 않습니다. 이 그룹에 연결된 프로세스 접근 범위만 바뀝니다.':['User roles stay unchanged; this group changes process access.','ユーザーロールは変わらず、このグループのプロセス権限だけ変更します。'],
+ '비로그인 상태 조회':['Guest status access','ゲストの状態閲覧'],
+ '이 그룹의 프로세스 이름과 상태를 공개합니다.':['Publish process names and status in this group.','このグループのプロセス名と状態を公開します。'],
+ '프로세스 그룹 공개':['Publish process group','プロセスグループを公開'],
+ '새 그룹은 관리자 외 접근 불가로 생성됩니다. 권한 관리에서 사용자 또는 그룹을 추가하세요.':['New groups are private until permissions are set.','新しいグループは権限設定まで管理者のみアクセスできます。'],
+ '추가할 사용자 또는 그룹이 없습니다.':['No user or group to add.','追加可能なユーザー・グループがありません。'],
+ '변경안에 추가':['Add to draft','変更案に追加'],
+ '다음 화면에서 영향 확인 후 적용':['Preview the impact before applying','次の画面で影響を確認して適用'],
+ '이 프로세스의 편집 권한이 없습니다.':['No permission to edit this process.','このプロセスの編集権限がありません。'],
+ '프로세스를 생성할 수 있는 그룹이 없습니다.':['No group permits process creation.','作成可能なプロセスグループがありません。'],
+ '그룹 이동은 별도 일괄 작업에서 처리합니다.':['Move groups using the bulk action.','グループ移動は一括操作で行います。'],
+ '비워 두면 기존 값 유지':['Leave blank to keep existing','空欄なら既存の値を維持'],
+ 'OS 계정 비밀번호':['OS account password','OSアカウントのパスワード'],
+ '설정 편집 보호':['Protect settings from editing','設定の編集を保護'],
+ '실행은 위임하되 명령·경로·환경변수 편집은 관리자만 허용합니다.':['Allow running, but restrict command edits to admins.','実行を委任し、コマンド編集は管理者のみ許可します。'],
+ '프로세스 설정 편집 보호':['Protect process editing','プロセス設定編集の保護'],
+ '변수 추가':['Add variable','変数を追加'],
+ '저장 후 재시작':['Save & restart','保存して再起動'],
+ '저장 후 실행':['Save & run','保存して実行'],
+ '환경변수 삭제':['Delete environment variable','環境変数を削除'],
+ '그룹 권한으로 일괄 복원':['Bulk restore group access','グループ権限へ一括復元'],
+ '프로세스 그룹 이동':['Move process group','プロセスグループを移動'],
+ '기존 그룹':['Current group','現在のグループ'],
+ '이동할 그룹':['Destination group','移動先グループ'],
+ '개별 예외도 제거하고 새 그룹 권한만 상속':['Remove overrides and inherit target group','例外を削除し移動先グループから継承'],
+ '기본은 기존 예외 유지입니다.':['Overrides are kept by default.','既存の例外はデフォルトで維持します。'],
+ '예외 있음':['Has overrides','例外あり'],
+ 'API 토큰 추가':['Create API token','APIトークンを追加'],
+ '사용자 권한과 토큰 범위의 교집합만 허용합니다. 토큰 값은 생성 직후 한 번만 표시됩니다.':['Tokens cannot exceed user or group permissions; shown once on creation.','トークンはユーザー・グループ権限を超えず、発行時のみ表示されます。'],
+ '토큰 생성':['Create token','トークンを作成'],
+ '삭제할까요?':['Delete this item?','削除しますか？'],
+ '연결된 권한 또는 토큰도 제거될 수 있습니다.':['Related access rules and tokens may be removed.','関連する権限やトークンも削除される場合があります。'],
+ '삭제했습니다.':['Deleted.','削除しました。'],
+ '이 토큰을 사용하는 연동은 즉시 차단됩니다.':['Integrations using this token will stop working immediately.','このトークンを使う連携はすぐに停止します。'],
+ '12자 이상 · 기존 세션과 토큰 무효화':['12+ characters · invalidates existing sessions and tokens','12文字以上・既存のセッションとトークンを無効化'],
+ '현재 변경안을 버리고 다른 대상을 확인할까요?':['Discard changes and select another target?','変更を破棄して別の対象を選びますか？'],
+ '변경안 버리기':['Discard changes','変更を破棄'],
+ '비밀번호 확인이 일치하지 않습니다.':['Passwords do not match.','パスワードが一致しません。'],
+ '인증 정책을 저장했습니다.':['Authentication settings saved.','認証設定を保存しました。'],
+ '공개 범위를 저장했습니다.':['Public scope saved.','公開範囲を保存しました。'],
+ '환경변수 이름이 없거나 중복되었습니다.':['Environment variable name missing or duplicated.','環境変数名が未入力または重複しています。'],
+ '설정을 저장하지 못했습니다. 실행하지 않았습니다.':['Could not save; process was not started.','設定を保存できず、実行はしませんでした。'],
+ '저장 후 실행을 요청했습니다.':['Saved and run requested.','保存して実行を要求しました。'],
+ '설정을 저장했습니다.':['Settings saved.','設定を保存しました。'],
+ '프로세스 실행에 실패했습니다.':['Process failed to start.','プロセスの実行に失敗しました。'],
+ '토큰을 생성했습니다.':['Token created.','トークンを発行しました。'],
+ 'API 토큰 생성 완료':['API token created','APIトークンの発行完了'],
+ '이 값은 다시 표시되지 않습니다. 안전한 곳에 보관하세요.':['This value is shown once. Store it securely.','この値は再表示できません。安全に保管してください。'],
+ '복사':['Copy','コピー'],
+ '새 비밀번호가 일치하지 않습니다.':['New passwords do not match.','新しいパスワードが一致しません。'],
+ '비밀번호를 변경했습니다. 다른 세션과 기존 토큰은 무효화됐습니다.':['Password changed. Other sessions and tokens were revoked.','パスワードを変更し、他のセッションとトークンを無効化しました。'],
+ '등록된 토큰이 없습니다.':['No tokens registered.','登録されたトークンはありません。'],
+ '일치하는 기록이 없습니다.':['No records found.','一致する記録がありません。'],
+ '로그를 읽는 중…':['Loading logs…','ログを読み込み中…'],
+ '아직 출력이 없습니다.':['No output yet.','まだ出力がありません。'],
+ '메뉴 열기':['Open menu','メニューを開く'], '메뉴 닫기':['Close menu','メニューを閉じる'],
+ '변경은 다음 실행부터 적용':['Changes apply on next run','変更は次回実行から反映'],
+ '연결할 수 없습니다':['Cannot connect','接続できません'],
+ '다시 연결':['Retry','再接続'],
+ '다시 인증':['Reauthenticate','再認証'],
+ '현재 로그인 계정의 비밀번호':['Current account password','現在のアカウントのパスワード'],
+ '취소':['Cancel','キャンセル'], '확인':['Confirm','確認'], '저장':['Save','保存'],
+ '닫기':['Close','閉じる'], '삭제':['Delete','削除'], '추가':['Add','追加'], '제거':['Remove','削除'],
+ '로그':['Logs','ログ'], '로그인':['Sign in','ログイン'], '로그아웃':['Sign out','ログアウト'],
+ '비로그인':['Guest','ゲスト'], '관리자':['Administrator','管理者'], '워크스페이스':['Workspace','ワークスペース'],
+ '관리 개요':['Admin overview','管理概要'], '프로세스':['Processes','プロセス'], '내 계정':['My account','マイアカウント'],
+ '사용자':['Users','ユーザー'], '그룹':['Groups','グループ'], '프로세스 권한':['Process access','プロセス権限'],
+ '인증·보안':['Authentication & security','認証・セキュリティ'], '감사 기록':['Audit log','監査ログ'],
+ '사용자 그룹':['User groups','ユーザーグループ'], '프로세스 그룹':['Process groups','プロセスグループ'],
+ '도움말':['Help','ヘルプ'], '도움말 / FAQ':['Help / FAQ','ヘルプ / FAQ'],
+ '도움말 열기':['Open help','ヘルプを開く'],
+ '서버 터미널':['Server terminal','サーバーターミナル'],
+ '서버에서 실행':['Run on server','サーバーで実行'],
+ '초기 설정 토큰':['Setup token','初期設定トークン'],
+ '토큰 입력':['Enter token','トークンを入力'],
+ '토큰으로 관리자 등록':['Register admin with token','トークンで管理者を登録'],
+ '관리자 ID':['Administrator ID','管理者ID'],
+ '표시 이름':['Display name','表示名'], '사용자 ID':['User ID','ユーザーID'],
+ '비밀번호':['Password','パスワード'], '비밀번호 확인':['Confirm password','パスワード（確認）'],
+ '비밀번호 표시':['Show password','パスワードを表示'], '비밀번호 숨기기':['Hide password','パスワードを隠す'],
+ '현재 비밀번호':['Current password','現在のパスワード'], '새 비밀번호':['New password','新しいパスワード'],
+ '새 비밀번호 확인':['Confirm new password','新しいパスワード（確認）'],
+ '비밀번호 변경':['Change password','パスワード変更'],
+ '초기 비밀번호':['Initial password','初期パスワード'],
+ '관리자 생성':['Create administrator','管理者を作成'],
+ '관리자 등록':['Register administrator','管理者を登録'],
+ 'OS 관리자 계정':['OS administrator account','OS管理者アカウント'],
+ 'OS 관리자 인증':['OS administrator','OS管理者認証'],
+ 'OS 계정':['OS account','OSアカウント'],
+ 'OS 계정 연결':['Link OS account','OSアカウント連携'],
+ 'OS 계정 식별자':['OS account identity','OSアカウント識別子'],
+ 'OS 계정 사용자명':['OS account username','OSアカウント名'],
+ 'OS 비밀번호':['OS password','OSパスワード'],
+ 'SpawnPoint 계정':['SpawnPoint account','SpawnPointアカウント'],
+ 'SpawnPoint 자체 계정':['SpawnPoint account','SpawnPoint独自アカウント'],
+ 'SpawnPoint 사용자 ID':['SpawnPoint user ID','SpawnPointユーザーID'],
+ '첫 관리자 설정':['Initial administrator setup','初回管理者設定'],
+ '최초 관리자 설정 방식':['Initial admin setup method','初回管理者の設定方法'],
+ '로그인 계정 종류':['Sign-in method','ログイン方式'],
+ '로그인 방법':['Sign-in method','ログイン方式'],
+ '설정 완료 확인':['Check setup status','設定完了を確認'],
+ '토큰으로 설정':['Use a setup token','トークンで設定'],
+ '이 브라우저에서 세션 유지':['Keep me signed in','ログイン状態を維持'],
+ '로그인 없이 둘러보기':['Continue as guest','ゲストとして続行'],
+ '원격 로그인에는 HTTPS 접속이 필요합니다.':['Remote sign-in requires HTTPS.','リモートログインにはHTTPSが必要です。'],
+ '현재는 원격 HTTP 접속입니다. 서버 PC의 localhost에서 설정하거나 아래 서버 터미널 명령을 사용하세요.':['Remote HTTP is not allowed. Use localhost or the server terminal.','リモートHTTPでは設定できません。localhostまたはサーバーターミナルをご利用ください。'],
+ 'OS 인증을 사용할 수 없습니다.':['OS authentication is unavailable.','OS認証を利用できません。'],
+ '어떤 계정으로 설정하나요?':['Which account can I use?','どのアカウントを使用しますか？'],
+ '이 서버의 Windows Administrators 계정으로 인증합니다.':['Use a Windows Administrators account on this server.','このサーバーのWindows Administratorsアカウントで認証します。'],
+ '이 서버의 root 또는 관리자 sudo 계정으로 인증합니다.':['Use root or an authorized sudo account on this server.','このサーバーのrootまたは管理者sudoアカウントで認証します。'],
+ 'OS 관리자 인증이 안 되나요?':['OS admin sign-in not working?','OS管理者認証ができませんか？'],
+ 'DB 경로·상태를 확인하려면?':['Where can I check the database path?','DBのパスと状態を確認するには？'],
+ '토큰으로 직접 등록하려면?':['How can I use a setup token?','トークンで直接登録するには？'],
+ 'OS 계정과 SpawnPoint 계정은?':['What are the account types?','OSアカウントとSpawnPointアカウントの違いは？'],
+ '로그인할 수 없나요?':['Unable to sign in?','ログインできませんか？'],
+ 'OS 비밀번호를 저장하나요?':['Is the OS password stored?','OSパスワードは保存されますか？'],
+ '원격에서 로그인하려면?':['How do I sign in remotely?','リモートでログインするには？'],
+ 'OS 계정 로그인 비밀번호는 저장하지 않습니다.':['OS account passwords are not stored.','OSアカウントのパスワードは保存しません。'],
+ '서버 PC의 localhost 또는 HTTPS로 접속해야 합니다.':['Use localhost or HTTPS.','localhostまたはHTTPSでアクセスしてください。'],
+ '계정·비밀번호를 확인하고, 다른 로그인 방식을 선택해 보세요. 계정과 권한은 관리자가 설정합니다.':['Check your credentials or try another sign-in method.','認証情報を確認するか、別のログイン方式をお試しください。'],
+ 'OS 계정은 이 서버의 Windows 계정이고, SpawnPoint 계정은 관리자에게 발급받은 자체 계정입니다.':['An OS account is a Windows account on this server; a SpawnPoint account is managed separately.','OSアカウントはこのサーバーのWindowsアカウントです。SpawnPointアカウントは別途管理されます。'],
+ 'OS 계정은 이 서버의 Linux 계정이고, SpawnPoint 계정은 관리자에게 발급받은 자체 계정입니다.':['An OS account is a Linux account on this server; a SpawnPoint account is managed separately.','OSアカウントはこのサーバーのLinuxアカウントです。SpawnPointアカウントは別途管理されます。'],
+ '사용자 추가':['Add user','ユーザーを追加'], '사용자 편집':['Edit user','ユーザーを編集'],
+ '사용자 관리':['Manage users','ユーザー管理'],
+ '변경 저장':['Save changes','変更を保存'],
+ '표시 이름 *':['Display name *','表示名 *'],
+ '사용자 ID *':['User ID *','ユーザーID *'],
+ 'OS 계정 식별자 *':['OS account identity *','OSアカウント識別子 *'],
+ '변경할 때만 입력':['Leave blank to keep','変更する場合のみ入力'],
+ '12자 이상':['At least 12 characters','12文字以上'],
+ '역할':['Role','ロール'], '상태':['Status','状態'],
+ '활성':['Active','有効'], '정지':['Suspended','停止'],
+ '뷰어':['Viewer','閲覧者'], '참조자':['Contributor','参照者'],
+ '개발자':['Developer','開発者'],
+ '모든 역할':['All roles','すべてのロール'],
+ '모든 그룹':['All groups','すべてのグループ'],
+ '이름 또는 계정':['Name or account','名前またはアカウント'],
+ '사용자 검색':['Search users','ユーザーを検索'],
+ '역할 필터':['Role filter','ロールで絞り込む'],
+ '최근 활동':['Recent activity','最近の操作'],
+ '일치하는 사용자가 없습니다.':['No matching users.','一致するユーザーがいません。'],
+ '역할 비교':['Compare roles','ロールを比較'],
+ '역할과 그룹을 지정하고 로그인 수단을 연결합니다.':['Manage roles, groups, and sign-in accounts.','ロール・グループ・ログイン方式を管理します。'],
+ '역할은 최대 권한입니다. 그룹에 추가해도 역할 상한을 넘을 수 없습니다.':['Roles limit the maximum permissions.','ロールで権限の上限が決まります。'],
+ 'OS 계정 로그인':['OS account sign-in','OSアカウントログイン'],
+ 'SpawnPoint 자체 계정 로그인':['SpawnPoint account sign-in','SpawnPoint独自アカウントログイン'],
+ 'OS 계정 로그인 허용':['Allow OS account sign-in','OSアカウントログインを許可'],
+ 'SpawnPoint 계정 로그인 허용':['Allow SpawnPoint sign-in','SpawnPointログインを許可'],
+ '로그인 계정 종류와 프로세스 실행 계정은 별도로 관리합니다.':['Sign-in identity and process execution identity are separate.','ログインIDとプロセス実行アカウントは別管理です。'],
+ '설정 저장':['Save settings','設定を保存'],
+ '설정':['Settings','設定'],
+ '프로세스 관리 서버':['Process management server','プロセス管理サーバー'],
+ '현재 브라우저':['Current browser','現在のブラウザ'],
+ '연결된 신원':['Linked identity','連携済みID'],
+ '접근 가능':['Accessible','アクセス可能'],
+ '활성 사용자':['Active users','有効なユーザー'],
+ '개별 권한 예외':['Process overrides','個別権限の例外'],
+ '그룹 기본값과 다른 프로세스':['Processes with custom access','グループ設定と異なるプロセス'],
+ '권한 확대':['Access increased','権限の拡大'],
+ '권한 축소':['Access reduced','権限の縮小'],
+ '접근 권한 변화 없음':['No access changes','アクセス権限に変更なし'],
+ '처음 500개 변경을 표시합니다.':['Showing the first 500 changes.','最初の500件を表示します。'],
+ '권한 관리':['Manage access','権限管理'],
+ '그룹 이동':['Move group','グループを移動'],
+ '그룹 권한으로 복원':['Restore inherited access','グループ権限に戻す'],
+ '선택 해제':['Clear selection','選択解除'],
+ '프로세스 편집':['Edit process','プロセスを編集'],
+ '작업':['Actions','操作'], '실행 계정':['Execution account','実行アカウント'],
+ '내 권한':['My access','自分の権限'], '생성':['Create','作成'],
+ '실행':['Run','実行'], '중지':['Stop','停止'], '재시작':['Restart','再起動'],
+ '편집':['Edit','編集'], '편집·실행':['Edit & run','編集・実行'],
+ '조회':['View','閲覧'], '조회·실행':['View & run','閲覧・実行'],
+ '로그 조회':['View logs','ログ閲覧'], '상태 조회':['View status','状態閲覧'],
+ '실행·중지':['Run & stop','実行・停止'],
+ '설정 편집':['Edit settings','設定の編集'],
+ '그룹 내 생성':['Create in group','グループ内作成'],
+ '접근 불가':['No access','アクセス不可'], '설정 없음':['Not set','設定なし'],
+ '그룹 상속':['Inherited from group','グループから継承'],
+ '권한 변경':['Change access','権限変更'],
+ '권한 변경 영향':['Access changes','権限変更の影響'],
+ '권한 변경을 적용했습니다.':['Access changes applied.','権限変更を適用しました。'],
+ '프로세스 그룹 추가':['Add process group','プロセスグループを追加'],
+ '사용자 그룹 추가':['Add user group','ユーザーグループを追加'],
+ '프로세스 그룹 편집':['Edit process group','プロセスグループを編集'],
+ '사용자 그룹 편집':['Edit user group','ユーザーグループを編集'],
+ '그룹 이름':['Group name','グループ名'], '설명':['Description','説明'],
+ '멤버':['Members','メンバー'], '멤버 관리':['Manage members','メンバー管理'],
+ '그룹에 기본 권한을 지정하고, 필요한 프로세스만 예외를 둡니다.':['Set group defaults and override only where needed.','グループの基本権限を設定し、必要なプロセスのみ例外を追加します。'],
+ '권한 규칙':['Permission rules','権限ルール'],
+ '접근 대상과 권한':['Subjects & access','対象と権限'],
+ '사용자 / 그룹':['User / group','ユーザー / グループ'],
+ '허용 범위':['Permission level','許可範囲'],
+ '적용 방식':['Rule source','適用方法'],
+ '허용 규칙이 없습니다.':['No access rules.','アクセスルールがありません。'],
+ '확인할 사용자':['Preview as user','ユーザーを選んで確認'],
+ '01 · 사용자 역할 상한':['01 · Role limit','01 · ロールの上限'],
+ '02 · 대상 접근 권한':['02 · Resource access','02 · 対象のアクセス権限'],
+ '03 · 프로세스 예외 / 보호':['03 · Overrides / protection','03 · 例外 / 保護'],
+ '최종 허용':['Effective access','最終的な許可'],
+ '저장되지 않은 변경 사항':['Unsaved changes','未保存の変更'],
+ '현재 저장된 권한':['Saved access','保存済みの権限'],
+ '접근할 사람':['Users who can access','アクセスする人'],
+ '접근할 대상':['Resources to access','アクセス対象'],
+ '신규 프로세스 자동 상속':['Automatically inherited by new processes','新規プロセスへ自動継承'],
+ '신규 프로세스는 그룹 자동 상속':['New processes inherit group access','新規プロセスにグループ権限を自動継承'],
+ '기본은 접근 거부':['Default: deny access','デフォルト：アクセス拒否'],
+ '그룹 이동 시 접근 권한이 달라질 수 있습니다. 프로세스 화면에서 여러 항목을 선택해 영향 확인 후 일괄 이동할 수 있습니다.':['Moving processes can change access. Preview changes before applying them in bulk.','グループ移動で権限が変わります。一括変更前に影響を確認してください。'],
+ '자동 시작':['Auto start','自動起動'],
+ '서비스 계정':['Service account','サービスアカウント'],
+ '지정 사용자':['Specific user','指定ユーザー'],
+ '실행 계정 변경은 관리자만 가능합니다.':['Only administrators can change the execution account.','実行アカウントの変更は管理者のみ可能です。'],
+ '사용자명':['Username','ユーザー名'],
+ 'OS 실행 계정':['OS execution account','OS実行アカウント'],
+ '작업 디렉터리':['Working directory','作業ディレクトリ'],
+ '명령어':['Command','コマンド'],
+ '환경변수':['Environment variables','環境変数'],
+ '변경은 다음 실행부터 적용':['Changes apply on the next run','変更は次回実行から反映'],
+ '저장된 실행 비밀번호는 표시하지 않습니다.':['Saved execution passwords are hidden.','保存済みの実行パスワードは表示しません。'],
+ '프로세스 그룹은 하나만 소속합니다. 생성은 개발자 역할 이상 + 그룹의 생성 허용이 모두 필요합니다. 그룹 이동과 일괄 복원은 적용 전에 영향 확인을 거칩니다.':['A process belongs to one group. Creation requires both a developer role and group permission.','プロセスは１つのグループに所属します。作成には開発者ロールとグループ権限が必要です。'],
+ '접근할 사용자 또는 그룹':['User or group','ユーザーまたはグループ'],
+ '접근 대상 추가':['Add subject','アクセス対象を追加'],
+ '로그인 방식, 공개 범위, 실행 계정과 API 접근을 관리합니다.':['Manage sign-in, public access, execution identities, and API access.','ログイン・公開範囲・実行アカウント・APIアクセスを管理します。'],
+ '인증·세션':['Authentication & sessions','認証・セッション'],
+ '비로그인 접근':['Guest access','ゲストアクセス'],
+ 'OS 실행 계정':['OS execution accounts','OS実行アカウント'],
+ 'API 토큰':['API tokens','APIトークン'],
+ '로그인 방법':['Sign-in methods','ログイン方式'],
+ '세션과 계정 보호':['Session security','セッションとアカウントの保護'],
+ 'Windows 통합 인증 자동 로그인':['Windows integrated sign-in','Windows統合認証自動ログイン'],
+ '미지원 · OS 계정 ID/PW 사용':['Unavailable · use OS username/password','未対応・OSのID/パスワードを使用'],
+ '유휴 세션 만료':['Idle timeout','アイドルタイムアウト'],
+ '민감한 변경 시 재인증':['Reauthenticate sensitive changes','重要な変更時に再認証'],
+ '로그인 시도 제한':['Login attempt limits','ログイン試行制限'],
+ '정지·역할 변경 즉시 반영':['Apply role changes immediately','停止・ロール変更を即時反映'],
+ '필수':['Required','必須'],
+ '비로그인으로 계속':['Continue as guest','ゲストとして続行'],
+ '로그인 없이 둘러보기':['Browse without signing in','ログインせず閲覧'],
+ '로그인 없이 둘러보기 허용':['Allow guest browsing','ゲスト閲覧を許可'],
+ '공개 범위':['Public scope','公開範囲'],
+ '공개된 프로세스의 상태를 확인합니다.':['View public process status.','公開プロセスの状態を確認します。'],
+ '공개 목록에 명령어·경로·계정 정보는 포함하지 않습니다.':['Public lists omit commands, paths, and account data.','公開一覧にはコマンド・パス・アカウント情報を含めません。'],
+ '새 프로세스':['New process','新規プロセス'],
+ '이름 또는 그룹 검색':['Search by name or group','名前・グループで検索'],
+ '프로세스 검색':['Search processes','プロセスを検索'],
+ '프로세스 그룹 필터':['Process group filter','プロセスグループで絞り込む'],
+ '표시된 프로세스 모두 선택':['Select all visible processes','表示中のプロセスをすべて選択'],
+ '표시할 프로세스가 없습니다.':['No processes to show.','表示するプロセスがありません。'],
+ '검색 조건 또는 접근 권한을 확인하세요.':['Check the filters or your access.','検索条件または権限を確認してください。'],
+ '중지됨':['Stopped','停止中'],
+ '실행 중':['Running','実行中'],
+ '오류':['Error','エラー'],
+ '보호':['Protected','保護'],
+ '저장하지 않은 변경이 있습니다':['Unsaved changes','未保存の変更があります'],
+ '변경 사항을 저장하지 않았습니다':['Changes not saved','変更は保存されていません'],
+ '저장하지 않고 이동':['Discard changes','変更を破棄'],
+ '관리자만 접근할 수 있습니다.':['Administrators only.','管理者のみアクセスできます。'],
+ '계정 또는 비밀번호를 확인하세요':['Check your username or password.','ユーザー名またはパスワードを確認してください。'],
+ '서버 응답을 읽지 못했습니다.':['Could not read the server response.','サーバー応答を読み取れませんでした。'],
+ '저장했습니다.':['Saved.','保存しました。'],
+ '변경 사항을 저장했습니다.':['Changes saved.','変更を保存しました。'],
+ '프로세스를 삭제했습니다.':['Process deleted.','プロセスを削除しました。'],
+ '프로세스를 삭제할까요?':['Delete this process?','このプロセスを削除しますか？'],
+ '프로세스 중지 후 등록 정보와 로그를 삭제합니다.':['Stop the process and delete its registration and logs.','プロセスを停止し、登録情報とログを削除します。'],
+ '토큰을 폐기할까요?':['Revoke this token?','このトークンを無効にしますか？'],
+ '토큰을 폐기했습니다.':['Token revoked.','トークンを無効にしました。'],
+ '토큰을 복사했습니다.':['Token copied.','トークンをコピーしました。'],
+ '다른 세션을 종료할까요?':['End other sessions?','他のセッションを終了しますか？'],
+ '다른 세션을 종료했습니다.':['Other sessions ended.','他のセッションを終了しました。'],
+ '현재 브라우저는 유지합니다.':['This browser stays signed in.','現在のブラウザは維持します。'],
+ '감사 기록 상세':['Audit detail','監査ログの詳細'],
+ '내보내기':['Export','エクスポート'],
+ '시각':['Time','時刻'], '대상':['Target','対象'],
+ '결과':['Result','結果'],
+ '일치하는 기록이 없습니다.':['No matching records.','一致する記録がありません。'],
+ '비밀번호·토큰 원문은 기록하지 않음':['Passwords and tokens are never logged','パスワードやトークンは記録しません'],
+ '프로필':['Profile','プロフィール'],
+ '현재 로그인 방식':['Current sign-in method','現在のログイン方式'],
+ '종료':['End','終了'],
+ '토큰 추가':['Create token','トークンを追加'],
+ '토큰 이름':['Token name','トークン名'],
+ '접근 범위':['Access scope','アクセス範囲'],
+ '최대 권한':['Maximum permission','最大権限'],
+ '만료일':['Expiry date','有効期限'],
+ '등록된 토큰이 없습니다.':['No API tokens.','APIトークンがありません。'],
+ '그룹에 권한을 지정합니다.':['Assign group access.','グループ権限を設定します。'],
+ '그룹 권한으로 복원':['Reset to group policy','グループ権限に戻す'],
+ '진행할까요?':['Continue?','続行しますか？'],
+ '상태를 확인하세요':['Check status','状態を確認してください'],
+};
+const I18N_CODES=['en','ja'];
+const I18N_STORAGE='spawnpoint.ui.language';
+let locale=(()=>{let saved='';try{saved=localStorage.getItem(I18N_STORAGE)||'';}catch{}if(['ko','en','ja'].includes(saved))return saved;const pref=(navigator.languages?.[0]||navigator.language||'ko').toLowerCase().split('-')[0];return ['ko','en','ja'].includes(pref)?pref:'ko';})();
+const i18nTextOriginals=new WeakMap();
+const i18nAttrOriginals=new WeakMap();
+const i18nSkip='[translate="no"], [data-no-i18n], pre, code, .log-content, #liveLog, .person strong, .person small, .process-name, .avatar, .server-name, .command-line';
+function tr(source){if(locale==='ko')return source;const v=I18N[source];return v?.[locale==='en'?0:1]||source;}
+function trDynamic(source){
+ if(locale==='ko')return source;
+ if(!source)return source;const simple=tr(source);if(simple!==source)return simple;
+ const m=(re)=>source.match(re);
+ let a;
+ if(a=m(/^활성 (\d+)명 · 정지 (\d+)명$/))return locale==='en'?`Active ${a[1]} · Suspended ${a[2]}`:`有効 ${a[1]}人 · 停止 ${a[2]}人`;
+ if(a=m(/^(\d+)개 표시 · (\d+)개 실행 중$/))return locale==='en'?`${a[1]} shown · ${a[2]} running`:`${a[1]}件表示 · ${a[2]}件実行中`;
+ if(a=m(/^(\d+)개 선택$/))return locale==='en'?`${a[1]} selected`:`${a[1]}件選択`;
+ if(a=m(/^(\d+)개 프로세스$/))return locale==='en'?`${a[1]} processes`:`${a[1]}件のプロセス`;
+ if(a=m(/^(\d+)개 프로세스 · 그룹 권한 자동 상속$/))return locale==='en'?`${a[1]} processes · group access inherited`:`${a[1]}件のプロセス · グループ権限を自動継承`;
+ if(a=m(/^(\d+)개 프로세스 · (\d+)개 예외$/))return locale==='en'?`${a[1]} processes · ${a[2]} overrides`:`${a[1]}件のプロセス · ${a[2]}件の例外`;
+ if(a=m(/^관리자 (\d+)명 · 정지 (\d+)명$/))return locale==='en'?`${a[1]} admins · ${a[2]} suspended`:`管理者${a[1]}人 · 停止${a[2]}人`;
+ if(a=m(/^유휴 (\d+)분 · 최대 12시간$/))return locale==='en'?`Idle ${a[1]} min · max 12 hours`:`無操作${a[1]}分 · 最大12時間`;
+ if(a=m(/^(\d+)분$/))return locale==='en'?`${a[1]} min`:`${a[1]}分`;
+ if(a=m(/^(Windows|Linux) · 프로세스 관리 서버$/))return a[1]+(locale==='en'?' · Process management server':' · プロセス管理サーバー');
+ if(a=m(/^(\d+)개 개별 예외$/))return locale==='en'?`${a[1]} overrides`:`${a[1]}件の個別例外`;
+ if(a=m(/^(\d+)개 프로세스 · 개별 예외 유지$/))return locale==='en'?`${a[1]} processes · overrides preserved`:`${a[1]}件のプロセス・個別例外を維持`;
+ if(a=m(/^유휴 (\d+)분$/))return locale==='en'?`Idle ${a[1]} min`:`無操作${a[1]}分`;
+ if(a=m(/^(.+) · (관리자|개발자|참조자|뷰어)$/)){return a[1]+' · '+tr(a[2]);}
+ return source;
+}
+function i18nExcluded(node){return node.parentElement?.closest(i18nSkip)||false;}
+function localizeNode(node){
+ if(node.nodeType===Node.TEXT_NODE){if(i18nExcluded(node))return;
+  const cur=node.nodeValue||'';let v=i18nTextOriginals.get(node);
+  if(!v||v.translation!==cur)v={original:cur,translation:cur};
+  const leading=v.original.match(/^\s*/)?.[0]||'',trailing=v.original.match(/\s*$/)?.[0]||'';
+  const text=v.original.slice(leading.length,v.original.length-trailing.length);
+  const next=leading+trDynamic(text)+trailing;
+  v.translation=next;i18nTextOriginals.set(node,v);if(next!==cur)node.nodeValue=next;
+  return;
+ }
+ if(node.nodeType!==Node.ELEMENT_NODE)return;
+ const el=node;
+ if(el.matches('[translate="no"], [data-no-i18n], pre, code, .log-content, #liveLog'))return;
+ for(const attr of ['placeholder','aria-label','title']){
+  if(!el.hasAttribute(attr))continue;
+  const value=el.getAttribute(attr)||'';let cache=i18nAttrOriginals.get(el)||{};let orig=cache[attr];
+  if(!orig||orig.translation!==value)orig={original:value,translation:value};
+  const changed=trDynamic(orig.original);orig.translation=changed;cache[attr]=orig;
+  i18nAttrOriginals.set(el,cache);if(changed!==value)el.setAttribute(attr,changed);
+ }
+ for(const child of el.childNodes)localizeNode(child);
+}
+let i18nRendering=false;
+function localizeAll(){if(i18nRendering)return;i18nRendering=true;try{
+ document.documentElement.lang=locale;
+ for(const el of [document.getElementById('root'),document.getElementById('modal'),document.getElementById('confirm'),document.getElementById('authHelpDialog'),document.getElementById('reauthDialog'),document.getElementById('toast')])if(el)localizeNode(el);
+ for(const sel of document.querySelectorAll('#spLanguage'))sel.value=locale;
+}finally{i18nRendering=false;}}
+function setLocale(next){if(!['ko','en','ja'].includes(next))return;locale=next;
+ try{localStorage.setItem(I18N_STORAGE,next);}catch{}
+ localizeAll();
+}
+const i18nObserver=new MutationObserver(()=>localizeAll());
+i18nObserver.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['placeholder','aria-label','title']});
+
 const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const clone=x=>JSON.parse(JSON.stringify(x));
@@ -124,7 +638,7 @@ async function adminRequest(payload,path='/api/access/admin'){
  try{return await request(path,data);}catch(e){if(e.code==='reauth_required'){await reauthenticate();return request(path,data);}throw e;}
 }
 function reauthenticate(){return new Promise((resolve,reject)=>{
- const dlg=$('#reauthDialog');reauthResolve={resolve,reject};dlg.innerHTML=`<form id="reauthForm" class="dialog-layout"><div class="dialog-head"><h2>다시 인증</h2></div><div class="dialog-body"><label for="reauthPassword">현재 로그인 계정의 비밀번호</label><input id="reauthPassword" name="password" type="password" autocomplete="current-password" required><div class="modal-error" id="reauthError"></div></div><div class="dialog-foot"><button type="button" class="btn quiet" id="reauthCancel">취소</button><button class="btn primary" type="submit">확인</button></div></form>`;dlg.showModal();$('#reauthPassword').focus();$('#reauthCancel').onclick=()=>{dlg.close();reauthResolve=null;reject(new Error('재인증을 취소했습니다.'));};
+ const dlg=$('#reauthDialog');reauthResolve={resolve,reject};dlg.innerHTML=`<form id="reauthForm" class="dialog-layout"><div class="dialog-head"><h2>다시 인증</h2></div><div class="dialog-body"><label for="reauthPassword">현재 로그인 계정의 비밀번호</label><input id="reauthPassword" name="password" type="password" autocomplete="current-password" required><div class="modal-error" id="reauthError"></div></div><div class="dialog-foot"><button type="button" class="btn quiet" id="reauthCancel">취소</button><button class="btn primary" type="submit">확인</button></div></form>`;dlg.showModal();localizeAll();$('#reauthPassword').focus();$('#reauthCancel').onclick=()=>{dlg.close();reauthResolve=null;reject(new Error('재인증을 취소했습니다.'));};
  });}
 function handleError(error){if(error.status===401){app.csrf='';state.actor=null;state.policyDirty=false;state.policyDraft=null;closeModal(true);state.route='/login';render();}if($('#modal').open&&$('#modalError'))modalError(error.message);else toast(error.message);}
 async function saved(message='저장했습니다.') {closeModal(true);state.policyDirty=false;state.policyDraft=null;await refresh();toast(message);}
@@ -177,7 +691,7 @@ function designCanCreate(user,group){return !!user&&user.status==='active'&&(use
 function access(user,p,data=db){return !isAdmin()&&data===db?(p.capabilities||{}):designAccess(user,p,data);}
 function canCreate(user,group){return !isAdmin()?!!group?.can_create:designCanCreate(user,group);}
 function toast(text){clearTimeout(toastTimer);$('#toast').innerHTML=icon('check')+`<span>${esc(text)}</span>`;$('#toast').hidden=false;toastTimer=setTimeout(()=>$('#toast').hidden=true,3200);}
-function fmtDate(){return new Date().toLocaleDateString('ko-KR');}
+function fmtDate(){return new Date().toLocaleDateString(locale==='ja'?'ja-JP':locale==='en'?'en-US':'ko-KR');}
 function statusBadge(p){return badge(p.status==='running'?'실행 중':p.status==='failed'?'오류':'중지',p.status==='running'?'green':p.status==='failed'?'red':'',p.status==='running'?'': '');}
 function pageTitle(kicker,title,desc,actions=''){return `<div class="page-title"><div><div class="eyebrow">${kicker}</div><h1>${title}</h1>${desc?`<p>${desc}</p>`:''}</div>${actions?`<div class="actions">${actions}</div>`:''}</div>`;}
 function head(title,more=''){return `<div class="panel-head"><h2>${title}</h2>${more}</div>`;}
@@ -198,10 +712,10 @@ function navigate(route,force=false){
 function render(){
  if(state.route.startsWith('/admin')&&!isAdmin())state.route='/processes';
  renderRail();
- if(state.route==='/login'){$('#root').innerHTML=renderLogin();return;}
+ if(state.route==='/login'){$('#root').innerHTML=renderLogin();localizeAll();return;}
  const labels={'/processes':'프로세스','/account':'내 계정','/admin':'관리 개요','/admin/users':'사용자','/admin/groups':'그룹','/admin/permissions':'프로세스 권한','/admin/security':'인증·보안','/admin/audit':'감사 기록'};
  const user=current();
- $('#root').innerHTML=`<div class="mobile-mask" data-act="close-menu"></div><div class="shell"><aside class="sidebar" aria-label="주 메뉴"><div class="mobile-menu-close">${ib('메뉴 닫기','close-menu','x')}</div>${brand()}<nav><div class="nav-group"><span class="nav-label">WORKSPACE</span>${nav('/processes','프로세스','terminal')}${user?nav('/account','내 계정','user'):''}</div>${isAdmin()?`<div class="nav-group"><span class="nav-label">ADMINISTRATION</span>${nav('/admin','관리 개요','grid')}${nav('/admin/users','사용자','users')}${nav('/admin/groups','그룹','layers')}${nav('/admin/permissions','프로세스 권한','shield')}${nav('/admin/security','인증·보안','key')}${nav('/admin/audit','감사 기록','history')}</div>`:''}</nav><div class="sidebar-footer"><div class="server-name"><span class="dot green"></span>${esc(app.runtime.server)}</div><div class="hint">${state.os==='windows'?'Windows':'Linux'} · 프로세스 관리 서버</div></div></aside><section class="workspace"><header class="topbar">${ib('메뉴 열기','menu','menu','class="menu-toggle"').replace('class="icon-btn"','class="icon-btn menu-toggle"').replace('class="menu-toggle"','')}<div class="breadcrumb">${state.route.startsWith('/admin')?'관리자':'워크스페이스'}${icon('chevron')}<span class="current">${labels[state.route]||'프로세스'}</span></div><div class="spacer"></div><span class="connection">${icon('lock')}${state.transport==='https'?'HTTPS':state.transport==='local'?'LOCALHOST':'HTTP'}</span><button class="user-button" data-act="${user?'account':'login'}"><div class="avatar">${user?esc(userIdentity(user).slice(0,2).toUpperCase()):'—'}</div><span><strong>${user?esc(user.name):'비로그인'}</strong><small>${user?roles[user.role].label:'공개 상태만 조회'}</small></span></button>${ib(user?'로그아웃':'로그인',user?'logout':'login','logout')}</header><main class="page" id="mainContent">${view()}</main></section></div>`;
+ $('#root').innerHTML=`<div class="mobile-mask" data-act="close-menu"></div><div class="shell"><aside class="sidebar" aria-label="주 메뉴"><div class="mobile-menu-close">${ib('메뉴 닫기','close-menu','x')}</div>${brand()}<nav><div class="nav-group"><span class="nav-label">WORKSPACE</span>${nav('/processes','프로세스','terminal')}${user?nav('/account','내 계정','user'):''}</div>${isAdmin()?`<div class="nav-group"><span class="nav-label">ADMINISTRATION</span>${nav('/admin','관리 개요','grid')}${nav('/admin/users','사용자','users')}${nav('/admin/groups','그룹','layers')}${nav('/admin/permissions','프로세스 권한','shield')}${nav('/admin/security','인증·보안','key')}${nav('/admin/audit','감사 기록','history')}</div>`:''}</nav><div class="sidebar-footer"><div class="server-name"><span class="dot green"></span>${esc(app.runtime.server)}</div><div class="hint">${state.os==='windows'?'Windows':'Linux'} · 프로세스 관리 서버</div></div></aside><section class="workspace"><header class="topbar">${ib('메뉴 열기','menu','menu','class="menu-toggle"').replace('class="icon-btn"','class="icon-btn menu-toggle"').replace('class="menu-toggle"','')}<div class="breadcrumb">${state.route.startsWith('/admin')?'관리자':'워크스페이스'}${icon('chevron')}<span class="current">${labels[state.route]||'프로세스'}</span></div><div class="spacer"></div>${languageSelect()}<span class="connection">${icon('lock')}${state.transport==='https'?'HTTPS':state.transport==='local'?'LOCALHOST':'HTTP'}</span><button class="user-button" data-act="${user?'account':'login'}"><div class="avatar">${user?esc(userIdentity(user).slice(0,2).toUpperCase()):'—'}</div><span><strong>${user?esc(user.name):'비로그인'}</strong><small>${user?roles[user.role].label:'공개 상태만 조회'}</small></span></button>${ib(user?'로그아웃':'로그인',user?'logout':'login','logout')}</header><main class="page" id="mainContent">${view()}</main></section></div>`;localizeAll();
 }
 function brand(){return `<div class="brand"><div class="icon-box">${icon('terminal')}</div><div><div class="brand-name">Spawn<b>Point</b></div><div class="eyebrow">PROCESS CONTROL</div></div></div>`;}
 function nav(route,label,i){return `<button class="nav-item ${state.route===route?'active':''}" data-nav="${route}" ${state.route===route?'aria-current="page"':''}>${icon(i)}${label}</button>`;}
@@ -211,7 +725,8 @@ function setupCommandText(command){
  const local=app.runtime.local_setup_url||'http://127.0.0.1:7527';
  return prefix+' '+command+(local==='http://127.0.0.1:7527'?'':' --url '+local);
 }
-function authHeading(title){return `<div class="auth-heading"><h1>${title}</h1><button type="button" class="auth-help" data-act="auth-help" title="도움말 / FAQ" aria-label="도움말 열기">${icon('info')}도움말</button></div>`;}
+function languageSelect(){return `<label class="locale-control" aria-label="Language / 언어 / 言語">${icon('globe')}<select id="spLanguage" aria-label="Language / 언어 / 言語"><option value="ko" ${locale==='ko'?'selected':''}>한국어</option><option value="en" ${locale==='en'?'selected':''}>English</option><option value="ja" ${locale==='ja'?'selected':''}>日本語</option></select></label>`;}
+function authHeading(title){return `<div class="auth-heading"><h1>${title}</h1><div class="auth-controls">${languageSelect()}<button type="button" class="auth-help" data-act="auth-help" title="도움말 / FAQ" aria-label="도움말 열기">${icon('info')}도움말</button></div></div>`;}
 function openAuthHelp(tokenForm=false){
  const dlg=$('#authHelpDialog'),win=state.os==='windows',setup=app.setup;
  const cli=setupCommandText('admin init'),status=setupCommandText('setup status'),token=setupCommandText('setup token');
@@ -234,7 +749,7 @@ function openAuthHelp(tokenForm=false){
   body=`<div class="auth-faq">${items.map(([q,a])=>`<details class="auth-faq-item"><summary>${q}</summary><div class="auth-faq-answer">${a}</div></details>`).join('')}</div>`;
  }
  dlg.innerHTML=`<div class="dialog-layout"><header class="dialog-head"><div class="icon-box">${icon(tokenForm?'key':'info')}</div><div><h2 id="authHelpTitle">${title}</h2></div><button type="button" class="icon-btn" data-act="auth-help-close" aria-label="닫기">${icon('x')}</button></header><div class="dialog-body">${body}</div></div>`;
- if(!dlg.open)dlg.showModal();
+ if(!dlg.open)dlg.showModal();localizeAll();localizeAll();
  (tokenForm?dlg.querySelector('#setupToken'):dlg.querySelector('[data-act="auth-help-close"]'))?.focus();
 }
 function setupPage(){
@@ -272,7 +787,7 @@ function pathForOS(s){return s;}
 function accountForOS(s){return s;}
 function usersView(){
  const rows=db.users.filter(u=>(state.userRole==='all'||u.role===state.userRole)&&(u.name+' '+userIdentity(u)).toLowerCase().includes(state.userFilter.toLowerCase()));
- return pageTitle('ADMINISTRATION / USERS','사용자','역할과 그룹을 지정하고 로그인 수단을 연결합니다.',button('사용자 추가','add-user','primary','plus'))+`<section class="panel"><div class="toolbar"><div class="search">${icon('search')}<input id="userSearch" value="${esc(state.userFilter)}" placeholder="이름 또는 계정" aria-label="사용자 검색"></div><select id="userRoleFilter" aria-label="역할 필터">${option('all','모든 역할',state.userRole)}${roleOptions(state.userRole)}</select><span class="spacer"></span><span class="hint toolbar-count">활성 ${activeUsers().length}명 · 정지 ${db.users.filter(u=>u.status==='paused').length}명</span></div><div class="table-scroll"><table><thead><tr><th>사용자</th><th>역할</th><th>사용자 그룹</th><th>로그인</th><th>상태</th><th>최근 활동</th><th></th></tr></thead><tbody>${rows.map(u=>`<tr><td><div class="person"><div class="avatar ${u.status==='paused'?'subtle':''}">${esc(userIdentity(u).slice(0,2).toUpperCase())}</div><div><strong>${esc(u.name)} ${u.id===state.actor?badge('나'):''}</strong><small>${esc(userIdentity(u))}</small></div></div></td><td>${roleBadge(u.role)}</td><td><div class="cluster">${u.groups.map(g=>badge(db.userGroups.find(x=>x.id===g)?.name||g)).join('')||'<span class="muted">—</span>'}</div></td><td><span class="cluster" style="font-size:11px">${icon(u.auth==='os'?'monitor':'key')}${u.auth==='os'?'OS 계정':'SpawnPoint 계정'}</span></td><td>${badge(u.status==='active'?'활성':'정지',u.status==='active'?'green':'red')}</td><td class="muted" style="font-size:11px">${u.last}</td><td>${ib('사용자 편집','edit-user','edit',`data-id="${u.id}"`)}</td></tr>`).join('')||'<tr><td colspan="7"><div class="empty">일치하는 사용자가 없습니다.</div></td></tr>'}</tbody></table></div><div class="panel-foot"><span class="hint">${icon('shield')} 역할은 최대 권한입니다. 그룹에 추가해도 역할 상한을 넘을 수 없습니다.</span><span class="spacer"></span><button class="link" data-act="role-guide">역할 비교</button></div></section>`;
+ return pageTitle('ADMINISTRATION / USERS','사용자','',button('사용자 추가','add-user','primary','plus'))+`<section class="panel"><div class="toolbar"><div class="search">${icon('search')}<input id="userSearch" value="${esc(state.userFilter)}" placeholder="이름 또는 계정" aria-label="사용자 검색"></div><select id="userRoleFilter" aria-label="역할 필터">${option('all','모든 역할',state.userRole)}${roleOptions(state.userRole)}</select><span class="spacer"></span><span class="hint toolbar-count">활성 ${activeUsers().length}명 · 정지 ${db.users.filter(u=>u.status==='paused').length}명</span></div><div class="table-scroll"><table><thead><tr><th>사용자</th><th>역할</th><th>사용자 그룹</th><th>로그인</th><th>상태</th><th>최근 활동</th><th></th></tr></thead><tbody>${rows.map(u=>`<tr><td><div class="person"><div class="avatar ${u.status==='paused'?'subtle':''}">${esc(userIdentity(u).slice(0,2).toUpperCase())}</div><div><strong>${esc(u.name)} ${u.id===state.actor?badge('나'):''}</strong><small>${esc(userIdentity(u))}</small></div></div></td><td>${roleBadge(u.role)}</td><td><div class="cluster">${u.groups.map(g=>badge(db.userGroups.find(x=>x.id===g)?.name||g)).join('')||'<span class="muted">—</span>'}</div></td><td><span class="cluster" style="font-size:11px">${icon(u.auth==='os'?'monitor':'key')}${u.auth==='os'?'OS 계정':'SpawnPoint 계정'}</span></td><td>${badge(u.status==='active'?'활성':'정지',u.status==='active'?'green':'red')}</td><td class="muted" style="font-size:11px">${u.last}</td><td>${ib('사용자 편집','edit-user','edit',`data-id="${u.id}"`)}</td></tr>`).join('')||'<tr><td colspan="7"><div class="empty">일치하는 사용자가 없습니다.</div></td></tr>'}</tbody></table></div><div class="panel-foot" style="justify-content:flex-end"><button class="link" data-act="role-guide">역할 비교</button></div></section>`;
 }
 function groupsView(){
  const usersTab=state.groupTab==='users';
@@ -324,7 +839,7 @@ function accountView(){const u=current();if(!u)return renderLogin();return pageT
 function openModal(title,kicker,body,footer,kind='',data={}){
  const dlg=$('#modal');lastFocus=document.activeElement;modalState={kind,revision:app.revision,...data,dirty:false};dlg.className=(data.wide?'wide':data.narrow?'narrow':'');
  dlg.innerHTML=`<form id="modalForm" class="dialog-layout"><header class="dialog-head"><div class="icon-box">${icon(data.icon||'settings')}</div><div><h2 id="modalTitle">${title}</h2><div class="eyebrow">${kicker}</div></div>${ib('닫기','close-modal','x')}</header><div class="dialog-body">${body}<div class="modal-error" id="modalError" role="alert"></div></div><footer class="dialog-foot">${footer}</footer></form>`;
- if(!dlg.open)dlg.showModal();
+ if(!dlg.open)dlg.showModal();localizeAll();localizeAll();
  requestAnimationFrame(()=>{const f=dlg.querySelector('input:not([type=checkbox]):not([disabled]),select,button');f?.focus();});
 }
 function modalFooter(primary='저장',hint=''){return `<span class="hint">${hint}</span><span class="spacer"></span>${button('취소','close-modal','quiet')}<button class="btn primary" type="submit">${primary}</button>`;}
@@ -335,13 +850,25 @@ function roleGuide(){openModal('역할과 실제 권한','PERMISSION MODEL',`<di
 function permissionGuide(){openModal('권한 적용 규칙','INHERITANCE & EXCEPTIONS',`<div class="effective-steps"><div class="effective-step"><small>01 · 역할</small><strong>역할이 허용하는 작업을 최대 범위로 사용</strong></div><div class="effective-step"><small>02 · 프로세스 그룹</small><strong>사용자·사용자 그룹별 기본 권한을 신규 프로세스에 자동 상속</strong></div><div class="effective-step"><small>03 · 프로세스 예외</small><strong>같은 대상의 규칙만 교체. 다른 상속 규칙은 유지</strong></div><div class="effective-step"><small>04 · 최종 판정</small><strong>사용자 직접 설정 → 그룹의 명시적 거부 → 그룹 허용의 최대 범위</strong></div><div class="effective-step"><small>05 · 보호 및 역할 상한</small><strong>역할 상한 적용 후, 보호 프로세스의 편집을 추가 제한</strong></div></div>${notice('<strong>접근 불가</strong>는 명시적 거부, <strong>설정 없음</strong>은 해당 규칙의 제거입니다. 관리자만 전체 접근을 갖고, 정지된 사용자는 어떤 규칙으로도 접근하지 못합니다.','muted','lock')}<p class="hint" style="margin-top:14px">프로세스 그룹은 하나만 소속합니다. 생성은 개발자 역할 이상 + 그룹의 생성 허용이 모두 필요합니다. 그룹 이동과 일괄 복원은 적용 전에 영향 확인을 거칩니다.</p>`,button('닫기','close-modal','primary'),'guide',{icon:'branch'});}
 function userModal(id){
  const u=id?db.users.find(x=>x.id===id):{id:null,login:'',name:'',role:'viewer',groups:[],auth:'local',status:'active',external:''};
- openModal(id?'사용자 편집':'사용자 추가','USER & ROLE',`<div class="fields"><div class="field" id="userNameField"><label for="userName">표시 이름 <span class="required">*</span></label><input id="userName" name="name" value="${esc(u.name)}" required maxlength="60"></div><div class="field" id="userLoginField"><label for="userLogin">사용자 ID <span class="required">*</span></label><input id="userLogin" name="login" value="${esc(u.auth==='local'?u.login:'')}" required pattern="[A-Za-z0-9_.-]+" maxlength="64" ${id&&u.auth==='local'?'readonly':''}></div><div class="field"><label for="editRole">역할</label><select id="editRole" name="role">${roleOptions(u.role)}</select></div><div class="field"><label for="userStatus">상태</label><select id="userStatus" name="status">${option('active','활성',u.status)}${option('paused','정지',u.status)}</select></div></div><div class="rule"></div><h3>사용자 그룹</h3><div class="checks">${db.userGroups.map(g=>`<label class="check-pill"><input type="checkbox" name="userGroup" value="${g.id}" ${u.groups.includes(g.id)?'checked':''}>${esc(g.name)}</label>`).join('')}</div><div class="rule"></div><div class="fields"><div class="field"><label for="userAuth">로그인 방법</label><select id="userAuth" name="auth">${option('local','SpawnPoint 자체 계정',u.auth)}${option('os','OS 계정 연결',u.auth)}</select></div><div class="field" id="externalField" ${u.auth==='os'?'':'hidden'}><label for="externalIdentity">OS 계정 식별자</label><input id="externalIdentity" name="external" value="${esc(u.external)}" placeholder="${state.os==='windows'?'DOMAIN\\username 또는 .\\username':'linux-username'}"><p class="hint">인증할 실제 서버 OS 계정입니다. 프로세스 실행 계정과는 별개입니다.</p></div><div class="field" id="localPasswordField" ${u.auth==='local'?'':'hidden'}><label for="userTempPassword">${id?'자체 계정 비밀번호 재설정':'자체 계정 초기 비밀번호'}</label><input id="userTempPassword" type="password" name="tempPassword" autocomplete="off" placeholder="${id?'비워 두면 변경하지 않음':'12자 이상'}"><p class="hint">자체 비밀번호는 해시로 저장됩니다.</p></div></div><div style="margin-top:18px">${notice('정지·역할·그룹 변경 시 기존 세션과 API 토큰도 재평가합니다. 마지막 활성 관리자는 정지하거나 강등할 수 없습니다.','muted','shield')}</div>`,(id?`<button class="btn danger" type="button" data-act="delete-user" data-id="${esc(id)}">삭제</button>`:'')+modalFooter(id?'변경 저장':'사용자 추가'), 'user',{id:u.id,originalAuth:u.auth,icon:'user'});
+ // Identification comes first. OS-linked accounts use their OS identity;
+ // SpawnPoint accounts require a separate login and password.
+ const groups=db.userGroups.length?`<div class="field full compact-groups"><label>사용자 그룹</label><div class="checks">${db.userGroups.map(g=>`<label class="check-pill"><input type="checkbox" name="userGroup" value="${esc(g.id)}" ${u.groups.includes(g.id)?'checked':''}>${esc(g.name)}</label>`).join('')}</div></div>`:'';
+ openModal(id?'사용자 편집':'사용자 추가','USER & ROLE',`
+ <div class="field full auth-kind"><label for="userAuth">로그인 방법</label><select id="userAuth" name="auth">${option('local','SpawnPoint 자체 계정',u.auth)}${option('os','OS 계정 연결',u.auth)}</select></div>
+ <div class="fields user-identity-fields">
+  <div class="field" id="userNameField"><label for="userName">표시 이름 <span class="required">*</span></label><input id="userName" name="name" value="${esc(u.name)}" required maxlength="60"></div>
+  <div class="field" id="userLoginField"><label for="userLogin">사용자 ID <span class="required">*</span></label><input id="userLogin" name="login" value="${esc(u.auth==='local'?u.login:'')}" required pattern="[A-Za-z0-9_.-]+" maxlength="64" ${id&&u.auth==='local'?'readonly':''}></div>
+  <div class="field" id="externalField" ${u.auth==='os'?'':'hidden'}><label for="externalIdentity">OS 계정 식별자 <span class="required">*</span></label><input id="externalIdentity" name="external" value="${esc(u.external)}" placeholder="${state.os==='windows'?'DOMAIN\\username / .\\username':'linux-username'}" autocomplete="off"></div>
+  <div class="field"><label for="editRole">역할</label><select id="editRole" name="role">${roleOptions(u.role)}</select></div>
+  <div class="field"><label for="userStatus">상태</label><select id="userStatus" name="status">${option('active','활성',u.status)}${option('paused','정지',u.status)}</select></div>
+  <div class="field full" id="localPasswordField" ${u.auth==='local'?'':'hidden'}><label for="userTempPassword">${id?'비밀번호 변경':'초기 비밀번호'}</label><input id="userTempPassword" type="password" name="tempPassword" autocomplete="new-password" placeholder="${id?'변경할 때만 입력':'12자 이상'}"></div>
+  ${groups}
+ </div>`,(id?`<button class="btn danger" type="button" data-act="delete-user" data-id="${esc(id)}">삭제</button>`:'')+modalFooter(id?'변경 저장':'사용자 추가'), 'user',{id:u.id,originalAuth:u.auth,icon:'user'});
  syncUserAuthFields();
 }
 function syncUserAuthFields(){
  const os=$('#userAuth').value==='os',login=$('#userLogin'),external=$('#externalIdentity'),password=$('#userTempPassword');
  $('#userLoginField').hidden=os;login.disabled=os;login.required=!os;
- $('#userNameField').classList.toggle('full',os);
  $('#externalField').hidden=!os;external.disabled=!os;external.required=os;
  $('#localPasswordField').hidden=os;password.disabled=os;
  password.required=!os&&(!modalState.id||modalState.originalAuth!=='local');
@@ -444,6 +971,7 @@ document.addEventListener('change',e=>{
  if(t.dataset.acl!==undefined&&isAdmin()){const k=t.dataset.acl,n=Number(t.value);if(n<0)delete state.policyDraft[k];else state.policyDraft[k]={level:n,create:n>0&&state.policyTarget==='group'&&!!state.policyDraft[k]?.create};state.policyDirty=true;render();return;}
  if(t.dataset.createGrant!==undefined&&isAdmin()){state.policyDraft[t.dataset.createGrant].create=t.checked;state.policyDirty=true;render();return;}
  if(t.id==='auditKind'){state.auditKind=t.value;render();return;}
+ if(t.id==='spLanguage'){setLocale(t.value);return;}
  if(t.id==='userAuth')syncUserAuthFields();
  if(t.closest('#modal')&&modalState)modalState.dirty=true;
 });
