@@ -379,13 +379,16 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
             page.set_viewport_size({'width':1440,'height':1000})
             page.locator(f'[data-process-row="{pid}"] [data-act="run"]').click()
             expect(page.locator('#liveLog')).to_contain_text('browser-output')
+            # Use real appended output instead of spoofing logState.text: a
+            # genuine generation/byte-offset reset is allowed to clear history.
+            with (root / 'logs' / 'Browser Worker edited.log').open('ab') as f:
+                f.write(('\n'.join('historical log line '+str(i) for i in range(180))+'\n').encode())
+            page.evaluate("""async() => { await pollLog(true); }""")
             # A 4-second status refresh must not recreate or scroll the live log.
             page.locator('[data-act="logs-toggle"]').click()
             expect(page.locator('[data-act="logs-toggle"]')).to_contain_text('더 읽기')
             page.evaluate("""() => {
-                logState.text=Array.from({length:180},(_,i)=>'historical log line '+i).join('\\n');
                 const el=document.getElementById('liveLog');
-                el.textContent=logState.text;
                 el.scrollTop=110;
                 window.__stableLogElement=el;
             }""")
@@ -395,14 +398,14 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
             result=page.evaluate("""() => ({
                 same:document.getElementById('liveLog')===window.__stableLogElement,
                 top:document.getElementById('liveLog')?.scrollTop,
-                text:document.getElementById('liveLog')?.textContent.startsWith('historical log line 0'),
+                text:document.getElementById('liveLog')?.textContent.includes('historical log line 0'),
                 paused:logState.paused
             })""")
             check(result['same'] and result['text'] and result['paused'],'background refresh retains log DOM and content')
             check(abs(result['top']-before_scroll)<=1,'status refresh preserves manual log scroll position')
             # Append to the current run (rather than requesting byte zero,
             # which now correctly triggers a stale-run reset).
-            with (root / 'logs' / (pid+'.log')).open('ab') as f:
+            with (root / 'logs' / 'Browser Worker edited.log').open('ab') as f:
                 f.write(b'\nmanual-added-log-line\n')
             page.evaluate("""async() => { logState.paused=false; await pollLog(true); }""")
             after_scroll=page.evaluate("document.getElementById('liveLog').scrollTop")

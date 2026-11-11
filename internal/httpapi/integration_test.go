@@ -73,7 +73,7 @@ func TestARequestWithNoOffsetReadsTheEndOfARealFile(t *testing.T) {
 		sb.WriteByte('\n')
 	}
 	whole := sb.String()
-	if err := os.WriteFile(filepath.Join(dir, "proc_45c05b99.log"), []byte(whole), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "entry-proc_45c05b99.log"), []byte(whole), 0o644); err != nil {
 		t.Fatalf("write the log: %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestARequestWithNoOffsetReadsTheEndOfARealFile(t *testing.T) {
 // since (0007-P [로그 이어받기 — 증분]).
 func TestResumingFromNextOffsetOverARealFile(t *testing.T) {
 	s, dir := realServer(t, "proc_1")
-	path := filepath.Join(dir, "proc_1.log")
+	path := filepath.Join(dir, "entry-proc_1.log")
 	if err := os.WriteFile(path, []byte("first\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestResumingFromNextOffsetOverARealFile(t *testing.T) {
 // (0007-P [로그 넘겨 쓰기 감지]).
 func TestRotationIsReportedOverARealFile(t *testing.T) {
 	s, dir := realServer(t, "proc_1")
-	if err := os.WriteFile(filepath.Join(dir, "proc_1.log"), []byte("fresh\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "entry-proc_1.log"), []byte("fresh\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 

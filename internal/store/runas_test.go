@@ -23,7 +23,7 @@ func TestRunAsMigrationKeepsExistingCommands(t *testing.T) {
 	if _, err := s.DB().Exec(`INSERT INTO runner_entry(id,label,cmd,env,created_at,updated_at,auto_start) VALUES('proc_12345678','legacy','echo legacy','{"KEEP":"yes"}','2026-11-01T00:00:00.000Z','2026-11-01T00:00:00.000Z',1)`); err != nil {
 		t.Fatal(err)
 	}
-	if a, b, err := s.Migrate(); err != nil || a != 4 || b != 2 {
+	if a, b, err := s.Migrate(); err != nil || a != 4 || b != 3 {
 		t.Fatalf("upgrade: %d %d %v", a, b, err)
 	}
 	rows, err := s.ListEntries()

@@ -97,10 +97,16 @@ func New(logDir string, log *opslog.Logger, registry Registry, killOnExit bool) 
 	}
 }
 
-// LogPath is the child log for id. Child logs sit beside the operations log and
-// cannot collide with it: an id is `proc_` plus eight hex digits.
+// LogPath resolves the stable filename linked to the internal process ID.
+// The ID remains the API/DB identity, never part of a normal log filename.
 func (m *Manager) LogPath(id string) string {
-	return filepath.Join(m.logDir, id+".log")
+	e, ok := m.entry(id)
+	if !ok {
+		return filepath.Join(m.logDir, id+".log")
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return m.logPathLocked(e)
 }
 
 // MaintainLogs runs at server start and periodically thereafter. It respects
@@ -115,17 +121,22 @@ func (m *Manager) MaintainLogs(now time.Time) {
 	for _, e := range entries {
 		e.opMu.Lock()
 		e.mu.Lock()
+		// A rename deferred while a Windows collector held the file can be
+		// completed as soon as its pipe and log handle are closed.
+		if e.status != StatusRunning {
+			m.renameLogLocked(e)
+		}
 		if e.coll != nil {
 			select {
 			case <-e.coll.done:
-				if maintainStoppedLog(m.LogPath(e.id), now) {
+				if maintainStoppedLog(m.logPathLocked(e), now) {
 					e.logGeneration += "-retained-" + strconv.FormatInt(now.UnixNano(), 10)
 				}
 			default:
 				e.coll.maintain(now)
 			}
 		} else {
-			if maintainStoppedLog(m.LogPath(e.id), now) {
+			if maintainStoppedLog(m.logPathLocked(e), now) {
 				e.logGeneration += "-retained-" + strconv.FormatInt(now.UnixNano(), 10)
 			}
 		}
@@ -174,6 +185,7 @@ func (m *Manager) registerConfigured(label, cmd string, cwd *string, env map[str
 		e.autoStart = autoStart[0]
 	}
 	m.mu.Lock()
+	e.logName = m.availableLogNameLocked(label, e.id, "")
 	m.entries[e.id] = e
 	m.mu.Unlock()
 	persisted := m.persist(e)
@@ -206,6 +218,8 @@ func (m *Manager) Update(id string, label, cmd *string, cwd **string, env map[st
 	if !ok {
 		return Info{}, false, false
 	}
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
 	e.mu.Lock()
 	if label != nil {
 		e.label = *label
@@ -223,10 +237,14 @@ func (m *Manager) Update(id string, label, cmd *string, cwd **string, env map[st
 		e.autoStart = autoStart[0]
 	}
 	e.updatedAt = time.Now()
-	info := e.infoLocked()
 	e.mu.Unlock()
-
-	return info, m.persist(e), true
+	persisted := m.persist(e)
+	if persisted || m.registry == nil {
+		e.mu.Lock()
+		m.renameLogLocked(e)
+		e.mu.Unlock()
+	}
+	return e.info(), persisted, true
 }
 
 // Delete stops the process, removes the registration and removes the logs.
@@ -244,6 +262,10 @@ func (m *Manager) Delete(id string) (persisted, found bool) {
 	defer e.opMu.Unlock()
 	m.stopChild(e, lifecycle.ReasonDeleteRequested, time.Time{})
 
+	// Keep the resolved path before deleting the ID-to-filename association.
+	e.mu.Lock()
+	logPath := m.logPathLocked(e)
+	e.mu.Unlock()
 	m.mu.Lock()
 	delete(m.entries, id)
 	m.mu.Unlock()
@@ -256,21 +278,21 @@ func (m *Manager) Delete(id string) (persisted, found bool) {
 			persisted = true
 		}
 	}
-	removed := m.removeLogs(id)
+	removed := m.removeLogs(logPath)
 	m.log.Log(opslog.Info, "entry deleted",
 		opslog.F("id", id), opslog.F("persisted", persisted), opslog.F("logs_removed", removed))
 	return persisted, true
 }
 
-// removeLogs deletes <id>.log and its archives, returning how many went.
-func (m *Manager) removeLogs(id string) int {
+// removeLogs deletes one named log and its archives, returning how many went.
+func (m *Manager) removeLogs(base string) int {
 	removed := 0
-	base := m.LogPath(id)
 	names := make([]string, 0, LogArchiveKeep+1)
 	names = append(names, base)
 	for n := 1; n <= LogArchiveKeep; n++ {
 		names = append(names, archiveName(base, n))
 	}
+	names = append(names, base+".rotating")
 	for _, name := range names {
 		if err := os.Remove(name); err == nil {
 			removed++
@@ -294,7 +316,6 @@ func (m *Manager) Restore() (int, error) {
 		return 0, err
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	for _, row := range rows {
 		identity, err := runas.Parse(row.RunAsJSON)
 		if err != nil {
@@ -304,6 +325,7 @@ func (m *Manager) Restore() (int, error) {
 			runAs:     identity,
 			id:        row.ID,
 			label:     row.Label,
+			logName:   restoredLogName(row.LogName, row.ID),
 			cmd:       row.Cmd,
 			cwd:       normaliseCwd(row.Cwd),
 			env:       copyEnv(row.Env),
@@ -313,6 +335,20 @@ func (m *Manager) Restore() (int, error) {
 		}
 		e.clearLive()
 		m.entries[e.id] = e
+	}
+	m.mu.Unlock()
+	// All IDs are loaded before allocating new human-readable names, so an
+	// upgrade cannot accidentally reuse another process's already-bound path.
+	for _, row := range rows {
+		e, ok := m.entry(row.ID)
+		if !ok {
+			continue
+		}
+		e.opMu.Lock()
+		e.mu.Lock()
+		m.renameLogLocked(e)
+		e.mu.Unlock()
+		e.opMu.Unlock()
 	}
 	return len(rows), nil
 }
@@ -324,12 +360,7 @@ func (m *Manager) persist(e *entry) bool {
 		return false
 	}
 	e.mu.Lock()
-	row := store.RunnerEntry{
-		ID: e.id, Label: e.label, Cmd: e.cmd, Cwd: e.cwd, Env: copyEnv(e.env),
-		AutoStart: e.autoStart,
-		RunAsJSON: e.runAs.JSON(),
-		CreatedAt: e.createdAt, UpdatedAt: e.updatedAt,
-	}
+	row := m.rowLocked(e)
 	e.mu.Unlock()
 
 	if err := m.registry.SaveEntry(row); err != nil {
@@ -358,6 +389,7 @@ func (m *Manager) Run(id string) (Info, bool) {
 	if e.status == StatusRunning {
 		return e.infoLocked(), true
 	}
+	m.renameLogLocked(e)
 	m.spawn(e, markerRun)
 	return e.infoLocked(), true
 }
@@ -380,6 +412,7 @@ func (m *Manager) Restart(id string) (Info, bool) {
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	m.renameLogLocked(e)
 	m.spawn(e, markerRestart)
 	return e.infoLocked(), true
 }
@@ -393,6 +426,9 @@ func (m *Manager) Stop(id string) (Info, bool) {
 	}
 	e.opMu.Lock()
 	m.stopChild(e, lifecycle.ReasonStopRequested, time.Time{})
+	e.mu.Lock()
+	m.renameLogLocked(e)
+	e.mu.Unlock()
 	e.opMu.Unlock()
 	return e.info(), true
 }
@@ -530,7 +566,7 @@ func (m *Manager) CloseServerJob() {
 // itself are returned to viewers. Both normal and run-as-user starts use it.
 // The caller holds e.mu and serializes starts through e.opMu.
 func (m *Manager) spawn(e *entry, marker string) {
-	logPath := m.LogPath(e.id)
+	logPath := m.logPathLocked(e)
 	maintainStoppedLog(logPath, time.Now())
 	if marker != "" {
 		if err := writeMarker(logPath, marker, time.Now()); err != nil {

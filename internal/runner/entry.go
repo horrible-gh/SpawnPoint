@@ -73,6 +73,7 @@ type entry struct {
 
 	id        string
 	label     string
+	logName   string // Stable file stem. Old registrations default to the legacy ID until migrated.
 	cmd       string
 	cwd       *string
 	env       map[string]string

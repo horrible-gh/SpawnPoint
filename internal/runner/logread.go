@@ -68,6 +68,7 @@ func (m *Manager) ReadLog(id, offsetParam string) (LogView, bool) {
 	}
 	e.mu.Lock()
 	generation, begin, running := e.logGeneration, e.logStartOffset, e.status == StatusRunning
+	logPath := m.logPathLocked(e)
 	collector := e.coll
 	e.mu.Unlock()
 	if collector != nil {
@@ -79,7 +80,7 @@ func (m *Manager) ReadLog(id, offsetParam string) (LogView, bool) {
 
 	empty := emptyView()
 	empty.Generation = generation
-	file, err := os.Open(m.LogPath(id))
+	file, err := os.Open(logPath)
 	if err != nil {
 		// Not there yet, or not readable. Both come back as an empty result:
 		// the entry exists, and a reader polling it should keep polling rather

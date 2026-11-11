@@ -189,7 +189,7 @@ Start a process with a JSON body such as:
 }
 ```
 
-Only `cmd` is required. When `label` is omitted, SpawnPoint uses the first token of the command. Commands run through the OS shell, and combined stdout and stderr are appended to `<SPAWNPOINT_LOG_DIR>/<id>.log`. The UI polls logs periodically. Every Run/Restart starts a fresh **visible console**: older output and restart markers stay in the log file and normal archives but are excluded from the API/UI window of the new run. The log response includes a `generation` identifier so other open browsers also clear stale output when the run changes. `Stop` by itself does not clear the console.
+Only `cmd` is required. When `label` is omitted, SpawnPoint uses the first token of the command. Commands run through the OS shell, and combined stdout and stderr are appended to `<SPAWNPOINT_LOG_DIR>/<process name>.log` (for example, `FlowGate-Dev.log`; duplicate names receive ` (2)`, ` (3)`, etc.). Existing ID-named logs and their numbered archives are automatically migrated to the readable filenames when safe; internal process IDs remain unchanged. The UI polls logs periodically. Every Run/Restart starts a fresh **visible console**: older output and restart markers stay in the log file and normal archives but are excluded from the API/UI window of the new run. The log response includes a `generation` identifier so other open browsers also clear stale output when the run changes. `Stop` by itself does not clear the console.
 
 PUT replaces the full registration. It does not start, stop, or restart the current process. Omitted fields reset to their defaults, and the new command, working directory, and environment take effect on the next run or restart.
 
@@ -391,7 +391,19 @@ child wrote on its way down is kept.
 
 ### Child logs: rotation, reading, notations
 
-A child log rotates at 32 MiB and keeps ten archives (`<id>.log.1` to `.10`),
+Runner log filenames use the process display name, not its internal `proc_...` ID.
+The database retains a private stable log-filename binding, so an ordinary
+label edit safely renames the current file and all `.1`–`.10` archives.
+A process that is still running keeps its existing filename until its output
+collector finishes (Windows does not permit renaming an open file); the rename
+is retried on stop, restart, server startup or the maintenance pass. Collisions
+use ` (2)`, ` (3)` and so on. File-unsafe characters are replaced with `_`,
+and orphan/unowned files are never overwritten. Pre-upgrade `proc_...` logs
+are migrated on startup; a locked file is left in place for a later retry.
+The SQLite `log_name` migration is additive and preserves existing data.
+
+
+A child log rotates at 32 MiB and keeps ten archives (`<process name>.log.1` to `.10`),
 which bounds one entry at about 352 MiB. Rotation happens before the chunk that would
 cross the threshold, so a chunk is never split across two files, and the new file
 opens with a header line naming the time and how much was archived. A rename that

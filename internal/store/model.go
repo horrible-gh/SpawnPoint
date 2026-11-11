@@ -37,6 +37,7 @@ type RunnerEntry struct {
 	Env       map[string]string
 	AutoStart bool
 	RunAsJSON string
+	LogName   string // Stable on-disk log file stem, without .log; never exposed as identity.
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

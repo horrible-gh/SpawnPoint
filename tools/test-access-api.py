@@ -161,7 +161,7 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-access-') as work:
                          if (data := ref.call('/processes/' + public + '/logs')) else None)
         check(third['text'].count('access-test') == 1 and '--- restart ' not in third['text'],
               'Restart shows only current output and no historical marker')
-        original_file = (root / 'logs' / (public + '.log')).read_text(errors='replace')
+        original_file = (root / 'logs' / 'edited.log').read_text(errors='replace')
         check(original_file.count('access-test') >= 3 and '--- restart ' in original_file,
               'On-disk diagnostic history is not destroyed')
         ref.call('/processes/' + public + '/stop', {})

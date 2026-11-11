@@ -49,7 +49,7 @@ func (m *Manager) UpdateIdentity(id string, label, command *string, cwd **string
 			return e.infoLocked(), false, true, err
 		}
 	}
-	row := store.RunnerEntry{ID: e.id, Label: e.label, Cmd: e.cmd, Cwd: normaliseCwd(e.cwd), Env: copyEnv(e.env), AutoStart: e.autoStart, RunAsJSON: spec.JSON(), CreatedAt: e.createdAt, UpdatedAt: time.Now()}
+	row := store.RunnerEntry{ID: e.id, Label: e.label, Cmd: e.cmd, Cwd: normaliseCwd(e.cwd), Env: copyEnv(e.env), AutoStart: e.autoStart, RunAsJSON: spec.JSON(), LogName: e.logName, CreatedAt: e.createdAt, UpdatedAt: time.Now()}
 	if label != nil {
 		row.Label = *label
 	}
@@ -78,12 +78,13 @@ func (m *Manager) UpdateIdentity(id string, label, command *string, cwd **string
 	e.autoStart = row.AutoStart
 	e.runAs = spec
 	e.updatedAt = row.UpdatedAt
+	m.renameLogLocked(e)
 	return e.infoLocked(), true, true, nil
 }
 
 func (m *Manager) spawnAs(e *entry, marker string) {
 	// m.spawn already wrote the marker and established the new console window.
-	logPath := m.LogPath(e.id)
+	logPath := m.logPathLocked(e)
 	fail := func(err error) {
 		e.markFailed(err.Error(), time.Now())
 		m.log.Log(opslog.Error, "child start failed", opslog.F("id", e.id), opslog.F("detail", err))

@@ -173,7 +173,7 @@ try:
     assert len(re.findall(r'CHILD_PID=(\d+)', text)) == 1, 'console should show only the current auto-start run'
     assert USER.lower() in text.lower() and 'PROFILE=' in text, text
     log_dir = data_dir / 'logs' if WIN else Path('/var/log/spawnpoint')
-    historical = (log_dir / (id + '.log')).read_text(errors='replace')
+    historical = (log_dir / 'service-account-integration.log').read_text(errors='replace')
     assert len(re.findall(r'CHILD_PID=(\d+)', historical)) >= 2, 'previous service run must remain in on-disk logs'
     pid = int(re.findall(r'CHILD_PID=(\d+)', text)[-1])
     gone, close = process_watch(pid)

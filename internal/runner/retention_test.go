@@ -2,7 +2,6 @@ package runner
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -68,7 +67,7 @@ func TestStoppedProcessCleanupKeepsRegistration(t *testing.T) {
 func TestStoppedLogCrossingMidnightArchivesWithoutEmptyCurrent(t *testing.T) {
 	m, _ := testManager(t, nil)
 	id := registerQuietly(t, m, StatusStopped)
-	path := filepath.Join(m.logDir, id+".log")
+	path := m.LogPath(id)
 	if err := os.WriteFile(path, []byte("yesterday\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -77,10 +76,10 @@ func TestStoppedLogCrossingMidnightArchivesWithoutEmptyCurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.MaintainLogs(time.Now())
-	if got := readFile(t, archiveName(path, 1)); got != "yesterday\n" {
+	if got := readFile(t, archiveName(m.LogPath(id), 1)); got != "yesterday\n" {
 		t.Fatalf("archive %q", got)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
+	if _, err := os.Stat(m.LogPath(id)); !os.IsNotExist(err) {
 		t.Fatal("stopped process created empty current log")
 	}
 }
