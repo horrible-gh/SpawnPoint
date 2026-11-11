@@ -112,6 +112,23 @@ func run() int {
 		CloseDatabase: db.close,
 		Bind:          front.bind,
 		Serve: func(stop <-chan struct{}) error {
+			// Cleanup runs only after successful startup and restore. A
+			// quiet, long-running service still enforces the 30-day policy.
+			log.MaintainLogs(time.Now())
+			procs.MaintainLogs(time.Now())
+			go func() {
+				ticker := time.NewTicker(time.Hour)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-stop:
+						return
+					case now := <-ticker.C:
+						log.MaintainLogs(now)
+						procs.MaintainLogs(now)
+					}
+				}
+			}()
 			// Serve is reached only after a successful bind. Do not launch
 			// children when startup failed (for example, an occupied port).
 			procs.AutoStart(stop)

@@ -325,7 +325,7 @@ from is gone, and the bytes it recorded are what a registered command still has
 to assemble to.
 
 The operations log is `<SPAWNPOINT_LOG_DIR>/spawnpoint.log`, rotated at 16 MiB
-with five archives kept. `stopping` is written before cleanup starts, so the
+with ten archived generations kept (about 176 MiB including the current file). `stopping` is written before cleanup starts, so the
 reason survives even when the operating system cuts shutdown short.
 
 ### Database
@@ -385,12 +385,22 @@ child wrote on its way down is kept.
 
 ### Child logs: rotation, reading, notations
 
-A child log rotates at 32 MiB and keeps three archives (`<id>.log.1` to `.3`),
-which bounds one entry at 128 MiB. Rotation happens before the chunk that would
+A child log rotates at 32 MiB and keeps ten archives (`<id>.log.1` to `.10`),
+which bounds one entry at about 352 MiB. Rotation happens before the chunk that would
 cross the threshold, so a chunk is never split across two files, and the new file
 opens with a header line naming the time and how much was archived. A rename that
 cannot happen — on Windows, a log query holding the file open — costs nothing:
 the collector reopens the same file and tries again on the next chunk.
+
+In addition to size rotation, both kinds of log rotate at a local calendar-day
+boundary, with a 30-day automatic retention limit. Cleanup runs at server
+startup and hourly even for idle processes. A silent process does not generate
+an empty daily log; a stopped process's old current file is archived without
+creating a new empty file. Either 10 generations or 30 days may shorten the
+retention period. Expired log files are removed; database registrations and
+process settings are never removed by log cleanup. The active writer is not
+unlinked. Rotation and retention use best-effort filesystem operations; a
+locked archive may be retried during later maintenance.
 
 Reading is incremental. `GET .../logs` with no `offset` starts 256 KiB from the
 end and moves forward to a line boundary; the caller sends the `next_offset` it

@@ -26,14 +26,15 @@ import (
 	"sync"
 	"time"
 
+	"spawnpoint/internal/logretention"
 	"spawnpoint/internal/timefmt"
 )
 
 // Rotation policy (0008-L 1.3). The operations log rotates at 16 MiB and keeps
-// five archives, so a busy server retains roughly 96 MiB of history.
+// ten archives, so a busy server retains roughly 176 MiB of history.
 const (
 	RotateBytes = 16 * 1024 * 1024
-	ArchiveKeep = 5
+	ArchiveKeep = logretention.ArchiveKeep
 )
 
 // FileName is the operations log inside the configured log directory. Child
@@ -87,13 +88,14 @@ func V(value any) Field { return Field{Value: value} }
 // use; every exported method takes the same lock, which also serialises
 // rotation against writes.
 type Logger struct {
-	mu       sync.Mutex
-	path     string
-	file     *os.File
-	size     int64
-	once     map[string]struct{}
-	closed   bool
-	writeErr error
+	mu        sync.Mutex
+	path      string
+	file      *os.File
+	size      int64
+	lastWrite time.Time
+	once      map[string]struct{}
+	closed    bool
+	writeErr  error
 
 	// Injection points for the tests. Production values are set by Open.
 	now         func() time.Time
@@ -124,6 +126,7 @@ func Open(dir string) (*Logger, error) {
 		path:        path,
 		file:        file,
 		size:        info.Size(),
+		lastWrite:   info.ModTime(),
 		once:        make(map[string]struct{}),
 		now:         time.Now,
 		rotateBytes: RotateBytes,
@@ -207,11 +210,21 @@ func (l *Logger) write(record string) {
 		return
 	}
 	size := int64(len(record))
-	if l.size+size >= l.rotateBytes {
+	now := l.nowTime()
+	if l.size > 0 && logretention.DifferentDay(l.lastWrite, now) {
 		l.rotate()
+	}
+	if l.file != nil && l.size+size >= l.rotateBytes {
+		l.rotate()
+	}
+	if l.file == nil {
+		return
 	}
 	n, err := l.file.WriteString(record)
 	l.size += int64(n)
+	if n > 0 {
+		l.lastWrite = now
+	}
 	if err != nil && l.writeErr == nil {
 		l.writeErr = err
 	}
@@ -231,14 +244,7 @@ func (l *Logger) rotate() {
 	if err := l.file.Close(); err != nil && l.writeErr == nil {
 		l.writeErr = err
 	}
-	os.Remove(archiveName(l.path, l.keep))
-	for n := l.keep - 1; n >= 1; n-- {
-		from, to := archiveName(l.path, n), archiveName(l.path, n+1)
-		if _, err := os.Stat(from); err == nil {
-			os.Rename(from, to)
-		}
-	}
-	if err := os.Rename(l.path, archiveName(l.path, 1)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := logretention.ShiftCurrent(l.path, l.keep); err != nil && !errors.Is(err, os.ErrNotExist) {
 		// Keep going: reopening in append mode below still records, and a
 		// stalled rotation is preferable to a silent gap in the log.
 		if l.writeErr == nil {
@@ -255,6 +261,25 @@ func (l *Logger) rotate() {
 	}
 	l.file = file
 	l.size = 0
+	l.lastWrite = time.Time{}
+	if info, err := file.Stat(); err == nil {
+		l.size = info.Size()
+		l.lastWrite = info.ModTime()
+	}
+}
+
+// MaintainLogs applies the date and age policy even on a quiet server.
+// It never deletes the active file and writes no synthetic daily records.
+func (l *Logger) MaintainLogs(now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return
+	}
+	if l.size > 0 && logretention.DifferentDay(l.lastWrite, now) {
+		l.rotate()
+	}
+	logretention.Prune(l.path, l.keep, now)
 }
 
 func archiveName(path string, n int) string {

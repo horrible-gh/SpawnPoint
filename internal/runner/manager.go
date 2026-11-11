@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"spawnpoint/internal/runas"
+	"strconv"
 	"sync"
 	"time"
 
@@ -100,6 +101,37 @@ func New(logDir string, log *opslog.Logger, registry Registry, killOnExit bool) 
 // cannot collide with it: an id is `proc_` plus eight hex digits.
 func (m *Manager) LogPath(id string) string {
 	return filepath.Join(m.logDir, id+".log")
+}
+
+// MaintainLogs runs at server start and periodically thereafter. It respects
+// the same per-entry locks as Run/Restart/Delete and never closes a child pipe.
+func (m *Manager) MaintainLogs(now time.Time) {
+	m.mu.Lock()
+	entries := make([]*entry, 0, len(m.entries))
+	for _, e := range m.entries {
+		entries = append(entries, e)
+	}
+	m.mu.Unlock()
+	for _, e := range entries {
+		e.opMu.Lock()
+		e.mu.Lock()
+		if e.coll != nil {
+			select {
+			case <-e.coll.done:
+				if maintainStoppedLog(m.LogPath(e.id), now) {
+					e.logGeneration += "-retained-" + strconv.FormatInt(now.UnixNano(), 10)
+				}
+			default:
+				e.coll.maintain(now)
+			}
+		} else {
+			if maintainStoppedLog(m.LogPath(e.id), now) {
+				e.logGeneration += "-retained-" + strconv.FormatInt(now.UnixNano(), 10)
+			}
+		}
+		e.mu.Unlock()
+		e.opMu.Unlock()
+	}
 }
 
 // --- Registration --------------------------------------------------------------
@@ -499,6 +531,7 @@ func (m *Manager) CloseServerJob() {
 // The caller holds e.mu and serializes starts through e.opMu.
 func (m *Manager) spawn(e *entry, marker string) {
 	logPath := m.LogPath(e.id)
+	maintainStoppedLog(logPath, time.Now())
 	if marker != "" {
 		if err := writeMarker(logPath, marker, time.Now()); err != nil {
 			m.log.Once(opslog.Error, "child log write failed", e.id,

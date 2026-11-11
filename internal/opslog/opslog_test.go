@@ -183,6 +183,10 @@ func TestReopenAppendsAndResumesSizeTracking(t *testing.T) {
 	first.now = func() time.Time { return at }
 	first.Log(Info, "start", F("host", "127.0.0.1"))
 	first.Close()
+	// Reopen within the same log day; a date rollover archives by design.
+	if err := os.Chtimes(path, at, at); err != nil {
+		t.Fatal(err)
+	}
 
 	second, err := Open(dir)
 	if err != nil {

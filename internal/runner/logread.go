@@ -68,7 +68,14 @@ func (m *Manager) ReadLog(id, offsetParam string) (LogView, bool) {
 	}
 	e.mu.Lock()
 	generation, begin, running := e.logGeneration, e.logStartOffset, e.status == StatusRunning
+	collector := e.coll
 	e.mu.Unlock()
+	if collector != nil {
+		collector.mu.Lock()
+		epoch := collector.epoch
+		collector.mu.Unlock()
+		generation += ":" + strconv.FormatUint(epoch, 10)
+	}
 
 	empty := emptyView()
 	empty.Generation = generation
@@ -77,6 +84,9 @@ func (m *Manager) ReadLog(id, offsetParam string) (LogView, bool) {
 		// Not there yet, or not readable. Both come back as an empty result:
 		// the entry exists, and a reader polling it should keep polling rather
 		// than be told the entry is gone.
+		if offsetParam != "" {
+			empty.Reset = true
+		}
 		return empty, true
 	}
 	defer file.Close()

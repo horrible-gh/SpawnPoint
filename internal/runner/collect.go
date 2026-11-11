@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"spawnpoint/internal/logretention"
 	"spawnpoint/internal/opslog"
 	"spawnpoint/internal/timefmt"
 )
@@ -18,10 +19,10 @@ const PipeReadBuffer = 64 * 1024
 
 // LogArchiveKeep is `child_log_archive_keep` (0008-L 1.3). Deleting an entry
 // removes the log and this many archives (0008-L 2.5.1).
-const LogArchiveKeep = 3
+const LogArchiveKeep = logretention.ArchiveKeep
 
 // LogRotateBytes is `child_log_rotate_bytes` (0008-L 1.3). With the archives
-// this bounds one entry at `child_log_max_total_bytes`, 128 MiB.
+// this bounds one entry at approximately 352 MiB (current + 10 archives).
 const LogRotateBytes = 32 * 1024 * 1024
 
 // logRotateBytes is the threshold the collectors actually use. It is a variable
@@ -51,7 +52,10 @@ type collector struct {
 	mu sync.Mutex
 	// size is `tracked_size`: what the collector has written, counted as it
 	// writes rather than asked of the filesystem on every chunk (0008-L 2.5).
-	size int64
+	size       int64
+	lastDataAt time.Time
+	hasData    bool   // A header alone must not generate new empty daily logs.
+	epoch      uint64 // Changes when the active file is replaced, even mid-run.
 	// failed marks an entry whose output is no longer reaching the disk (E-20).
 	failed      bool
 	rotateBytes int64
@@ -79,6 +83,8 @@ func startCollector(id, path string, pipe *os.File, log *opslog.Logger) *collect
 			// counts from here rather than asking the filesystem on every
 			// write (0008-L 2.5).
 			c.size = info.Size()
+			c.lastDataAt = info.ModTime()
+			c.hasData = c.size > 0
 		}
 	} else {
 		c.failed = true
@@ -144,14 +150,25 @@ func (c *collector) write(chunk []byte) {
 	if c.file == nil {
 		return
 	}
-	if c.size+int64(len(chunk)) >= c.rotateBytes {
-		c.rotate()
+	now := time.Now()
+	if c.hasData && logretention.DifferentDay(c.lastDataAt, now) {
+		c.rotateAt(now)
+	}
+	if c.file == nil {
+		return
+	}
+	if c.file != nil && c.size+int64(len(chunk)) >= c.rotateBytes {
+		c.rotateAt(now)
 		if c.file == nil {
 			return
 		}
 	}
 	n, err := c.file.Write(chunk)
 	c.size += int64(n)
+	if n > 0 {
+		c.lastDataAt = now
+		c.hasData = true
+	}
 	if err != nil {
 		c.failed = true
 		c.log.Once(opslog.Error, "child log write failed", c.id,
@@ -170,22 +187,17 @@ func (c *collector) write(chunk []byte) {
 // growing and is rotated again on the next chunk. Losing output because a
 // rename failed would be the wrong trade: the point of the log is that it is
 // there afterwards.
-func (c *collector) rotate() {
+func (c *collector) rotate() { c.rotateAt(time.Now()) }
+
+func (c *collector) rotateAt(now time.Time) {
 	archived := c.size
 	if err := c.file.Close(); err != nil {
 		c.reportWriteFailure(err)
 	}
 	c.file = nil
 
-	os.Remove(archiveName(c.path, c.keep))
-	for n := c.keep - 1; n >= 1; n-- {
-		from, to := archiveName(c.path, n), archiveName(c.path, n+1)
-		if _, err := os.Stat(from); err == nil {
-			os.Rename(from, to)
-		}
-	}
 	rotated := true
-	if err := os.Rename(c.path, archiveName(c.path, 1)); err != nil {
+	if err := logretention.ShiftCurrent(c.path, c.keep); err != nil {
 		// On Windows this is what a reader holding the file open looks like:
 		// os.Open takes no share-delete right, so a query that overlaps the
 		// rotation blocks the rename for as long as it runs. Nothing is lost —
@@ -216,6 +228,9 @@ func (c *collector) rotate() {
 	if !rotated {
 		return
 	}
+	c.hasData = false
+	c.lastDataAt = now
+	c.epoch++
 
 	// The header goes in even though a reader whose offset survived the
 	// rotation will not see a `reset`. It is the only thing that tells that
@@ -225,7 +240,7 @@ func (c *collector) rotate() {
 	// pseudocode in 2.5 writes the threshold, but the archived file is always
 	// somewhat short of it — rotation happens before the chunk that would cross
 	// it — so the threshold would be a number that is never true.
-	header := "--- rotated " + timefmt.Response(time.Now()) +
+	header := "--- rotated " + timefmt.Response(now) +
 		" (previous " + strconv.FormatInt(archived, 10) + " bytes archived) ---\n"
 	n, err := c.file.WriteString(header)
 	c.size += int64(n)
@@ -235,6 +250,18 @@ func (c *collector) rotate() {
 	}
 	c.log.Log(opslog.Info, "child log rotated",
 		opslog.F("id", c.id), opslog.F("keep", c.keep))
+}
+
+// maintain rotates a quiet but still active collector after midnight, and
+// prunes only expired numbered archives. No new empty files are created on
+// subsequent silent days; a header alone does not count as child output.
+func (c *collector) maintain(now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.file != nil && c.hasData && logretention.DifferentDay(c.lastDataAt, now) {
+		c.rotateAt(now)
+	}
+	logretention.Prune(c.path, c.keep, now)
 }
 
 // reportWriteFailure records one child's log trouble once for the life of the
@@ -268,6 +295,27 @@ func (c *collector) stop(timeout time.Duration) bool {
 	case <-time.After(timeout):
 		return false
 	}
+}
+
+// maintainStoppedLog moves a previous day's closed log to the next numbered
+// archive without opening a new empty current file. Expired active files from
+// stopped processes are removed, but the registration is left untouched.
+func maintainStoppedLog(path string, now time.Time) bool {
+	logretention.Prune(path, LogArchiveKeep, now)
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+		return false
+	}
+	if logretention.Expired(info.ModTime(), now) {
+		return os.Remove(path) == nil
+	}
+	if logretention.DifferentDay(info.ModTime(), now) {
+		if err := logretention.ShiftCurrent(path, LogArchiveKeep); err == nil {
+			logretention.Prune(path, LogArchiveKeep, now)
+			return true
+		}
+	}
+	return false
 }
 
 // writeMarker appends a resume or restart marker to a child log (0008-L 2.5.1).

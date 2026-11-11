@@ -133,7 +133,7 @@ func TestRotationKeepsTheStatedNumberOfArchives(t *testing.T) {
 		t.Errorf("archive %d exists, more than the %d that are kept", LogArchiveKeep+1, LogArchiveKeep)
 	}
 	// Newest first: .1 holds the round before the current file.
-	if got := readFile(t, archiveName(c.path, 1)); !strings.Contains(got, "3333") {
+	if got := readFile(t, archiveName(c.path, 1)); !strings.Contains(got, strings.Repeat(strconv.Itoa(LogArchiveKeep), 2)) {
 		t.Errorf("archive 1 holds %q, want the most recent round", firstRunes(got, 60))
 	}
 
@@ -141,7 +141,7 @@ func TestRotationKeepsTheStatedNumberOfArchives(t *testing.T) {
 	if got := strings.Count(ops, "child log rotated"); got != LogArchiveKeep+1 {
 		t.Errorf("the operations log records %d rotations, want %d", got, LogArchiveKeep+1)
 	}
-	if !strings.Contains(ops, "child log rotated id=proc_00000001 keep=3") {
+	if !strings.Contains(ops, "child log rotated id=proc_00000001 keep=10") {
 		t.Errorf("the rotation record is not in the shape 2.5 fixes:\n%s", ops)
 	}
 }
