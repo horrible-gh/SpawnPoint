@@ -102,6 +102,12 @@ type entry struct {
 	// keeps a restart from having the outgoing process overwrite the incoming
 	// one's state.
 	gen int
+
+	// Console log boundaries belong to a run, not to the on-disk file.
+	// Historical bytes and restart markers remain available in the log file,
+	// but ReadLog only shows bytes written since this start attempt.
+	logStartOffset int64
+	logGeneration  string
 }
 
 // isRunning reports whether a process is alive for this entry. The log reader

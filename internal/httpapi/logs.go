@@ -3,8 +3,9 @@ package httpapi
 import "net/http"
 
 // logResponse is 0007-P [로그 최초 조회]. Every field is always present — none
-// is omitted when it is zero or false, because the screen reads all seven on
-// every poll and a missing `reset` would read as false.
+// is omitted when it is zero or false, because the legacy screen reads all
+// seven established fields on every poll. A run generation is optional for
+// clients that want to reset their visible console on execution/restart.
 type logResponse struct {
 	OK   bool   `json:"ok"`
 	Text string `json:"text"`
@@ -19,6 +20,9 @@ type logResponse struct {
 	Truncated  bool   `json:"truncated"`
 	Reset      bool   `json:"reset"`
 	Encoding   string `json:"encoding"`
+	// Optional to preserve the pre-existing seven-field contract for older
+	// or test runners without run generation information.
+	Generation string `json:"generation,omitempty"`
 }
 
 // serveLogs answers a log query.
@@ -55,5 +59,6 @@ func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request, id string) {
 		Truncated:   view.Truncated,
 		Reset:       view.Reset,
 		Encoding:    view.Encoding,
+		Generation:  view.Generation,
 	})
 }

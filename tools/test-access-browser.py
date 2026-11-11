@@ -400,9 +400,38 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
             })""")
             check(result['same'] and result['text'] and result['paused'],'background refresh retains log DOM and content')
             check(abs(result['top']-before_scroll)<=1,'status refresh preserves manual log scroll position')
-            page.evaluate("""async() => { logState.paused=false; logState.offset=0; await pollLog(true); }""")
+            # Append to the current run (rather than requesting byte zero,
+            # which now correctly triggers a stale-run reset).
+            with (root / 'logs' / (pid+'.log')).open('ab') as f:
+                f.write(b'\nmanual-added-log-line\n')
+            page.evaluate("""async() => { logState.paused=false; await pollLog(true); }""")
             after_scroll=page.evaluate("document.getElementById('liveLog').scrollTop")
             check(abs(after_scroll-before_scroll)<=1,'new log data does not steal manual scroll position')
+            check(page.locator('#liveLog').inner_text().count('manual-added-log-line')==1, 'log update still reaches the scrolled viewport')
+            # Restart must clear the currently shown console, even if prior
+            # output was visible and its old cursor could still be valid.
+            previous_generation=page.evaluate("logState.generation")
+            page.evaluate("""() => {
+                logState.text='stale console output from previous run';
+                document.getElementById('liveLog').textContent=logState.text;
+            }""")
+            page.locator(f'[data-act="restart"][data-id="{pid}"]').click()
+            page.locator('#confirm [data-act="confirm-yes"]').click()
+            expect(page.locator('#liveLog')).to_contain_text('browser-output-edited')
+            current_log=page.evaluate("""() => ({
+                generation: logState.generation,
+                text: document.getElementById('liveLog').textContent,
+                paused: logState.paused
+            })""")
+            check('stale console output' not in current_log['text'], 'UI restart clears previous console text')
+            check(current_log['generation'] and current_log['generation']!=previous_generation, 'restart changes console run generation')
+            latest=page.evaluate("""async (id) => {
+                const r=await fetch('/processes/'+encodeURIComponent(id)+'/logs?offset=0');
+                if(!r.ok) throw Error('log query failed');
+                return r.json();
+            }""",pid)
+            check(latest['generation']==current_log['generation'] and latest['reset'], 'server resets stale byte cursor after restart')
+            check(latest['text'].count('browser-output-edited')==1, 'server returns only current run output')
             # All administration views must render on real state, including empty states.
             for route in ['/admin','/admin/users','/admin/groups','/admin/permissions','/admin/security','/admin/audit','/account']:
                 nav(route)

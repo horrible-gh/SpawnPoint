@@ -142,6 +142,29 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-access-') as work:
         ref.call('/processes/' + public + '/run', {})
         wait_for(lambda: 'access-test' in ref.call('/processes/' + public + '/logs').get('text', ''))
         ref.call('/processes/' + public + '/stop', {})
+        previous = ref.call('/processes/' + public + '/logs')
+        check(previous.get('generation'), 'initial run has a console generation')
+        # Run after stop must discard earlier output in the console, but
+        # retain the earlier log lines on disk for diagnostics.
+        ref.call('/processes/' + public + '/run', {})
+        second = wait_for(lambda: (data if data.get('generation') != previous['generation'] and 'access-test' in data.get('text', '') else None)
+                          if (data := ref.call('/processes/' + public + '/logs')) else None)
+        check(second['text'].count('access-test') == 1, 'Run shows only the new invocation')
+        from_start = ref.call('/processes/' + public + '/logs?offset=0')
+        check(from_start['reset'] and from_start['generation'] == second['generation'],
+              'Run invalidates an old console byte offset')
+        check(from_start['text'].count('access-test') == 1, 'Run cursor cannot re-read previous output')
+        # Restart while running must also clear the console. An on-disk
+        # marker is intentionally not visible to the UI.
+        ref.call('/processes/' + public + '/restart', {})
+        third = wait_for(lambda: (data if data.get('generation') != second['generation'] and 'access-test' in data.get('text', '') else None)
+                         if (data := ref.call('/processes/' + public + '/logs')) else None)
+        check(third['text'].count('access-test') == 1 and '--- restart ' not in third['text'],
+              'Restart shows only current output and no historical marker')
+        original_file = (root / 'logs' / (public + '.log')).read_text(errors='replace')
+        check(original_file.count('access-test') >= 3 and '--- restart ' in original_file,
+              'On-disk diagnostic history is not destroyed')
+        ref.call('/processes/' + public + '/stop', {})
         admin.admin('process.meta', id=public, protected=False)
         # A process override denies only that process; a role never grows above its cap.
         admin.admin('policy', target='process', id=public, rules={'u:' + users['reference']: {'level': 0, 'create': False}})

@@ -332,9 +332,8 @@ func (m *Manager) Run(id string) (Info, bool) {
 
 // Restart stops the entry if it is running and starts it again.
 //
-// The log file is not truncated. A restart marker is written into it instead,
-// so the history of every run stays in one place and the marker says which run
-// the lines after it belong to (0008-L 3.1, 2.5.1).
+// The file history and restart marker remain on disk; only the console's
+// visible read window resets to the new run (0008-L 3.1, 2.5.1).
 func (m *Manager) Restart(id string) (Info, bool) {
 	e, ok := m.entry(id)
 	if !ok {
@@ -494,20 +493,28 @@ func (m *Manager) CloseServerJob() {
 
 // spawn starts the entry's command. The caller holds e.mu.
 //
-// marker is written to the log first when the start is a resume or a restart,
-// and omitted for the initial registration, which has nothing to resume from
-// (0008-L 2.2).
+// The on-disk log remains append-only across starts. The console read
+// boundary is set *after* the marker, so neither earlier runs nor the marker
+// itself are returned to viewers. Both normal and run-as-user starts use it.
+// The caller holds e.mu and serializes starts through e.opMu.
 func (m *Manager) spawn(e *entry, marker string) {
-	if e.runAs != nil {
-		m.spawnAs(e, marker)
-		return
-	}
 	logPath := m.LogPath(e.id)
 	if marker != "" {
 		if err := writeMarker(logPath, marker, time.Now()); err != nil {
 			m.log.Once(opslog.Error, "child log write failed", e.id,
 				opslog.F("id", e.id), opslog.F("detail", err))
 		}
+	}
+	// Reset the console even when validation or process launch later fails.
+	// The log file and its bounded archives are deliberately not deleted.
+	e.logStartOffset = 0
+	if info, err := os.Stat(logPath); err == nil {
+		e.logStartOffset = info.Size()
+	}
+	e.logGeneration = fmt.Sprintf("%d-%d", time.Now().UnixNano(), e.gen+1)
+	if e.runAs != nil {
+		m.spawnAs(e, marker)
+		return
 	}
 
 	// The working directory is checked here rather than left to the execution

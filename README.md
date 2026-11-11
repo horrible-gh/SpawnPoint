@@ -189,7 +189,7 @@ Start a process with a JSON body such as:
 }
 ```
 
-Only `cmd` is required. When `label` is omitted, SpawnPoint uses the first token of the command. Commands run through the OS shell, and combined stdout and stderr are appended to `<SPAWNPOINT_LOG_DIR>/<id>.log`. The UI polls logs once per second.
+Only `cmd` is required. When `label` is omitted, SpawnPoint uses the first token of the command. Commands run through the OS shell, and combined stdout and stderr are appended to `<SPAWNPOINT_LOG_DIR>/<id>.log`. The UI polls logs periodically. Every Run/Restart starts a fresh **visible console**: older output and restart markers stay in the log file and normal archives but are excluded from the API/UI window of the new run. The log response includes a `generation` identifier so other open browsers also clear stale output when the run changes. `Stop` by itself does not clear the console.
 
 PUT replaces the full registration. It does not start, stop, or restart the current process. Omitted fields reset to their defaults, and the new command, working directory, and environment take effect on the next run or restart.
 

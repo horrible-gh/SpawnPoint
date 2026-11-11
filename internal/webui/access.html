@@ -701,7 +701,10 @@ async function pollLog(force=false){
  try{
   const data=await request('/processes/'+encodeURIComponent(id)+'/logs'+(logState.offset===null?'':'?offset='+logState.offset));
   if(state.route!=='/processes'||state.procSelected!==id)return;
-  if(data.reset)logState.text='';
+  // New process starts/restarts reset the console, not the disk history.
+  // Generation also catches an offset that happens to be valid in both runs.
+  if(data.reset||(data.generation&&data.generation!==logState.generation))logState.text='';
+  if(data.generation)logState.generation=data.generation;
   logState.text=(logState.text+(data.text||'')).split('\n').slice(-500).join('\n');
   logState.offset=data.next_offset;logState.paused=!!data.truncated;
   const view=$('#liveLog');
@@ -725,7 +728,7 @@ async function serverImpact(payload){
 async function policyImpact(){return serverImpact({action:'policy',revision:state.policyRevision,id:state.policyTarget==='group'?state.policyGroup:state.policyTarget,target:state.policyTarget==='group'?'group':'process',rules:clone(state.policyDraft)});}
 async function processAction(action,id){
  const p=proc(id);if(!p||!access(current(),p).run)return;const label={run:'실행',stop:'중지',restart:'재시작'}[action];
- const perform=async()=>{try{const result=await request('/processes/'+encodeURIComponent(id)+'/'+action,{});state.procSelected=id;await refresh();if(result.process?.status==='failed')throw new Error(result.process.error||'프로세스를 실행하지 못했습니다.');toast(label+' 요청을 처리했습니다.');}catch(e){handleError(e);}};
+ const perform=async()=>{try{const result=await request('/processes/'+encodeURIComponent(id)+'/'+action,{});state.procSelected=id;if(action==='run'||action==='restart')logState={id,offset:null,text:'',paused:false,generation:null};await refresh();if(result.process?.status==='failed')throw new Error(result.process.error||'프로세스를 실행하지 못했습니다.');toast(label+' 요청을 처리했습니다.');}catch(e){handleError(e);}};
  if(action==='stop'||action==='restart')ask(p.name+' '+label,'실제 프로세스와 하위 프로세스에 적용됩니다.',label,perform);else await perform();
 }
 const current=()=>db.users.find(u=>u.id===state.actor)||null;

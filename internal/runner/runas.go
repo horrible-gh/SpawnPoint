@@ -82,12 +82,8 @@ func (m *Manager) UpdateIdentity(id string, label, command *string, cwd **string
 }
 
 func (m *Manager) spawnAs(e *entry, marker string) {
+	// m.spawn already wrote the marker and established the new console window.
 	logPath := m.LogPath(e.id)
-	if marker != "" {
-		if err := writeMarker(logPath, marker, time.Now()); err != nil {
-			m.log.Once(opslog.Error, "child log write failed", e.id, opslog.F("id", e.id), opslog.F("detail", err))
-		}
-	}
 	fail := func(err error) {
 		e.markFailed(err.Error(), time.Now())
 		m.log.Log(opslog.Error, "child start failed", opslog.F("id", e.id), opslog.F("detail", err))

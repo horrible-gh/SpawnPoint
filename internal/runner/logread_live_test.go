@@ -88,9 +88,8 @@ func TestLiveOutputSurvivesRotationAndReadsBack(t *testing.T) {
 	}
 }
 
-// A restart is a resume, not a fresh start: the log keeps everything and a
-// marker says where the new run begins (0008-L 2.5.1). The reader has to be
-// able to see that marker, which is why it is written in ASCII.
+// A restart preserves the historical file and timestamp marker, but the
+// console shows only the current run and hides the marker itself.
 func TestLiveRestartMarkerIsReadable(t *testing.T) {
 	requireLiveSpawn(t)
 	m, _ := testManager(t, nil)
@@ -113,16 +112,27 @@ func TestLiveRestartMarkerIsReadable(t *testing.T) {
 	}
 	waitFor("first-run")
 
+	old, _ := m.ReadLog(info.ID, "")
 	m.Restart(info.ID)
-	view := waitFor("--- restart ")
-
-	if !strings.Contains(view.Text, "first-run") {
-		t.Error("the restart lost what the first run wrote")
+	// The visible output must be empty until the new child produces output.
+	// The same echo line is emitted by both runs, so wait for it to appear.
+	view := waitFor("first-run")
+	if view.Generation == old.Generation || view.Generation == "" {
+		t.Errorf("restart did not change the console generation: %q", view.Generation)
 	}
-	// 0004-NR U3: the current implementation writes a bare `--- run ---`, which
-	// cannot be attributed to a moment afterwards.
-	marker := view.Text[strings.Index(view.Text, "--- restart "):]
+	if strings.Count(view.Text, "first-run") != 1 || strings.Contains(view.Text, "--- restart ") {
+		t.Errorf("previous run or marker was not hidden from console: %q", view.Text)
+	}
+	if continued, _ := m.ReadLog(info.ID, offsetOf(old.NextOffset)); !continued.Reset {
+		t.Error("old byte cursor did not reset after a restart")
+	}
+	// Audit history on disk remains intact and keeps the timestamped marker.
+	full := childLog(t, m, info.ID)
+	if strings.Count(full, "first-run") != 2 || !strings.Contains(full, "--- restart ") {
+		t.Errorf("previous run or restart marker lost from file: %q", full)
+	}
+	marker := full[strings.Index(full, "--- restart "):]
 	if !strings.Contains(marker[:min(len(marker), 45)], "T") {
-		t.Errorf("the marker carries no timestamp: %q", firstRunes(marker, 45))
+		t.Errorf("the on-disk marker carries no timestamp: %q", firstRunes(marker, 45))
 	}
 }

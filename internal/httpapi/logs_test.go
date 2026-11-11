@@ -191,3 +191,14 @@ func TestOffsetReachesTheReaderUntouched(t *testing.T) {
 		t.Errorf("an empty offset reached the reader as %q", rn.lastLog)
 	}
 }
+
+func TestLogGenerationIsIncludedWhenAvailable(t *testing.T) {
+	s, _ := logServer(t, runner.LogView{Generation: "run-42", Encoding: textdec.NameUTF8})
+	_, body, _ := do(t, s, http.MethodGet, "/processes/proc_45c05b99/logs", "")
+	wantBody(t, body, `{
+	  "ok": true, "text": "",
+	  "start_offset": 0, "next_offset": 0, "size": 0,
+	  "truncated": false, "reset": false, "encoding": "utf-8",
+	  "generation": "run-42"
+	}`)
+}

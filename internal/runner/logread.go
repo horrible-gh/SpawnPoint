@@ -27,6 +27,9 @@ const (
 // LogView is one answer to a log query, in the shape 0007-P fixed.
 type LogView struct {
 	Text string
+	// Generation changes on every start/restart, including failed attempts.
+	// The UI uses it to replace old output even if byte offsets happen to match.
+	Generation string
 	// StartOffset is where the read actually began, which is not necessarily
 	// where it was asked to begin: a tail read advances to a line boundary and
 	// a stale offset is thrown away (Reset).
@@ -38,8 +41,8 @@ type LogView struct {
 	// Truncated means the response limit stopped the read, not that anything
 	// was lost. The rest is behind NextOffset.
 	Truncated bool
-	// Reset means the requested offset was past the end of the file, so the
-	// screen must throw away what it has and redraw (0007-P [로그 넘겨 쓰기 감지]).
+	// Reset means the requested offset belongs to an older run or was past
+	// the end of the file after rotation. The client must discard old text.
 	Reset    bool
 	Encoding string
 }
@@ -63,23 +66,37 @@ func (m *Manager) ReadLog(id, offsetParam string) (LogView, bool) {
 	if !ok {
 		return LogView{}, false
 	}
+	e.mu.Lock()
+	generation, begin, running := e.logGeneration, e.logStartOffset, e.status == StatusRunning
+	e.mu.Unlock()
 
+	empty := emptyView()
+	empty.Generation = generation
 	file, err := os.Open(m.LogPath(id))
 	if err != nil {
 		// Not there yet, or not readable. Both come back as an empty result:
 		// the entry exists, and a reader polling it should keep polling rather
 		// than be told the entry is gone.
-		return emptyView(), true
+		return empty, true
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
-		return emptyView(), true
+		return empty, true
 	}
 	size := info.Size()
-
+	// The normal size-based rotation may have started a fresh active file.
+	// Its byte positions begin at zero rather than at the old run boundary.
+	if begin > size {
+		begin = 0
+	}
 	start, reset := resolveStart(file, offsetParam, size)
+	if start < begin {
+		start = begin
+		reset = true
+	}
 	view := LogView{
+		Generation:  generation,
 		StartOffset: start,
 		NextOffset:  start,
 		Size:        size,
@@ -106,7 +123,7 @@ func (m *Manager) ReadLog(id, offsetParam string) (LogView, bool) {
 	view.Truncated = start+int64(n) < size
 
 	res := m.decoder.Decode(data)
-	if res.Consumed == 0 && !e.isRunning() {
+	if res.Consumed == 0 && !running {
 		// Nothing could be consumed, so the reader would ask for the same bytes
 		// forever. While the child is alive that is right — the character it is
 		// half way through writing will be finished. Once it is gone nothing

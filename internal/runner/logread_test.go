@@ -362,3 +362,28 @@ func firstRunes(s string, n int) string {
 	}
 	return string(runes)
 }
+
+// A restored command with a pre-existing log starts a fresh visible console
+// window on Run without deleting the historical file. A failed start also
+// resets the console (the user requested a new run, even if it could not launch).
+func TestRunResetsConsoleWithoutDeletingHistoricalLog(t *testing.T) {
+	m, dir := testManager(t, nil)
+	missing := dir + string(os.PathSeparator) + "missing-working-directory"
+	info, _ := m.RegisterOnly("run", "echo new", &missing, nil)
+	writeLog(t, m, info.ID, []byte("previous-run-output\n"))
+	before, ok := m.ReadLog(info.ID, "")
+	if !ok || before.Text != "previous-run-output\n" {
+		t.Fatalf("unexpected historical contents: %+v", before)
+	}
+	afterRun, _ := m.Run(info.ID)
+	if afterRun.Status != StatusFailed {
+		t.Fatalf("expected a deliberate cwd failure, got %q", afterRun.Status)
+	}
+	view, ok := m.ReadLog(info.ID, offsetOf(before.NextOffset))
+	if !ok || !view.Reset || view.Text != "" || view.Generation == "" {
+		t.Fatalf("new failed start should show an empty console: %+v", view)
+	}
+	if full := childLog(t, m, info.ID); !strings.Contains(full, "previous-run-output") {
+		t.Fatalf("historical child log was removed: %q", full)
+	}
+}

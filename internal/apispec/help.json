@@ -348,7 +348,8 @@
         "size",
         "truncated",
         "reset",
-        "encoding"
+        "encoding",
+        "generation"
       ]
     },
     "error_response": {
