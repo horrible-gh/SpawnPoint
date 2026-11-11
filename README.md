@@ -293,17 +293,23 @@ sc.exe delete SpawnPoint
 
 ### Linux systemd service registration
 
-Build the Linux x64 executable, then register it under a **non-root** account with:
+Register the Linux service under a **non-root** account with one command from the repository root (Go 1.26+ is required):
 
 ```sh
-sh ./tools/dist.sh
-sudo sh ./tools/install-service.sh --user "$USER"
-sudo systemctl start spawnpoint
+sudo sh ./tools/install-service.sh --start
 ```
+
+The installer builds the current checkout automatically. To **update an existing service** after updating the repository source, run the same command without `--start`:
+
+```sh
+sudo sh ./tools/install-service.sh
+```
+
+For existing installations, this automatically rebuilds and atomically replaces the executable, then restarts the service **only if it was running**. An unchanged executable does not trigger a restart. If the new executable fails to start, the previous binary is restored and restarted. The existing service registration, account, environment settings, database, users and log files are preserved. Use `--source /path/to/spawnpoint` to deploy an already-built executable instead of rebuilding. Custom service registrations with a different `ExecStart` are not overwritten.
 
 The installer places the executable in `/opt/spawnpoint/spawnpoint`, registration in `/etc/systemd/system/spawnpoint.service`, SQLite in `/var/lib/spawnpoint`, and logs in `/var/log/spawnpoint`. It enables the service on boot, but **does not start it immediately** unless `--start` is passed. If invoked with `sudo`, the current non-root user is selected automatically; use `--user` to choose a dedicated account. The service uses loopback `127.0.0.1:7527` by default and can only access files permitted to its service user.
 
-Registration refuses to overwrite an existing unit. To inspect it use `systemctl status spawnpoint` and `journalctl -u spawnpoint`. To remove only the service registration (without deleting data or logs):
+Updates reuse the existing unit without overwriting it. To inspect the service use `systemctl status spawnpoint` and `journalctl -u spawnpoint`. To remove only the service registration (without deleting data or logs):
 
 ```sh
 sudo systemctl disable --now spawnpoint

@@ -49,6 +49,9 @@ jobs:
         run: |
           sh tools/dist.sh
           go test -race ./internal/requesttransport ./internal/access ./internal/httpapi ./internal/runner ./internal/store
+      - name: Linux installer upgrade and rollback checks
+        if: runner.os == 'Linux'
+        run: python3 tools/test-install-service.py
       - name: Windows packaging
         if: runner.os == 'Windows'
         shell: pwsh
