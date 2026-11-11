@@ -23,7 +23,7 @@ func TestMigrationStatementCounts(t *testing.T) {
 		"004_runner_auto_start.sql":   1,
 		"005_runner_run_as.sql":       1,
 		"006_access_control.sql":      5,
-		"007_runner_log_filename.sql":  1,
+		"007_runner_log_filename.sql": 1,
 	}
 
 	adapter := mustAdapter(t)
