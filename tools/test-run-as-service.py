@@ -153,6 +153,8 @@ try:
         return text if 'CHILD_PID=' in text else None
 
     text = until(output)
+    first_generation = api('/processes/' + id + '/logs').get('generation')
+    assert first_generation, 'first service run must have a console generation'
     assert USER.lower() in text.lower() and 'PROFILE=' in text, text
     assert PASSWORD not in text
     pid = int(re.findall(r'CHILD_PID=(\d+)', text)[-1])
@@ -163,8 +165,16 @@ try:
     control('stop')
     control('start')
     until(lambda: api('/processes/' + id)['process']['status'] == 'running')
-    until(lambda: len(re.findall(r'CHILD_PID=(\d+)', output() or '')) >= 2)
-    text = output()
+    def new_run_output():
+        result = api('/processes/' + id + '/logs')
+        return result if result.get('generation') != first_generation and 'CHILD_PID=' in result.get('text', '') else None
+    second = until(new_run_output)
+    text = second['text']
+    assert len(re.findall(r'CHILD_PID=(\d+)', text)) == 1, 'console should show only the current auto-start run'
+    assert USER.lower() in text.lower() and 'PROFILE=' in text, text
+    log_dir = data_dir / 'logs' if WIN else Path('/var/log/spawnpoint')
+    historical = (log_dir / (id + '.log')).read_text(errors='replace')
+    assert len(re.findall(r'CHILD_PID=(\d+)', historical)) >= 2, 'previous service run must remain in on-disk logs'
     pid = int(re.findall(r'CHILD_PID=(\d+)', text)[-1])
     gone, close = process_watch(pid)
     handles.append(close)
