@@ -57,19 +57,26 @@ func (m *Manager) principal(r *http.Request) (Principal, error) {
 	if errors.Is(e, http.ErrNoCookie) {
 		return Principal{}, nil
 	}
-	if e != nil || len(c.Value) > 256 || !Secure(r) {
+	if e != nil || c.Value == "" || len(c.Value) > 256 || !Secure(r) {
 		return Principal{}, errLogin
 	}
-	p := Principal{Session: digest(c.Value)}
-	var created, last, expires int64
-	e = m.db.QueryRow("SELECT user_id,user_version,csrf,created_at,last_seen,expires_at,auth_at FROM access_session WHERE digest=?", p.Session).Scan(&p.UserID, &p.Version, &p.CSRF, &created, &last, &expires, &p.AuthAt)
-	if e != nil {
+	p := Principal{}
+	now := m.now().Unix()
+	var last, expires int64
+	var remembered bool
+	hash := digest(c.Value)
+	// digest is the stable session row ID; only token_digest (or its brief
+	// overlap predecessor) is a bearer credential after a token rotation.
+	e = m.db.QueryRow("SELECT digest,user_id,user_version,csrf,last_seen,expires_at,auth_at,remembered FROM access_session WHERE token_digest=? OR (previous_digest=? AND previous_until>?)", hash, hash, now).Scan(&p.Session, &p.UserID, &p.Version, &p.CSRF, &last, &expires, &p.AuthAt, &remembered)
+	if errors.Is(e, sql.ErrNoRows) {
 		return Principal{}, errLogin
+	}
+	if e != nil {
+		return Principal{}, e
 	}
 	idle, _ := strconv.Atoi(m.state.Settings.Session)
-	now := m.now().Unix()
 	u := m.state.user(p.UserID)
-	if !active(u) || u.Version != p.Version || now >= expires || now-last >= int64(idle*60) {
+	if !active(u) || u.Version != p.Version || now >= expires || (!remembered && now-last >= int64(idle*60)) {
 		return Principal{}, errLogin
 	}
 	if (u.Auth == "local" && !m.state.Settings.LocalLogin) || (u.Auth == "os" && !m.state.Settings.OSLogin) {
@@ -103,7 +110,7 @@ func (m *Manager) currentPrincipal(p Principal) *User {
 	} else if p.Session != "" {
 		idle, _ := strconv.Atoi(m.state.Settings.Session)
 		var exists int
-		e := m.db.QueryRow("SELECT 1 FROM access_session WHERE digest=? AND user_id=? AND user_version=? AND expires_at>? AND last_seen>?", p.Session, u.ID, u.Version, m.now().Unix(), m.now().Unix()-int64(idle*60)).Scan(&exists)
+		e := m.db.QueryRow("SELECT 1 FROM access_session WHERE digest=? AND user_id=? AND user_version=? AND expires_at>? AND (remembered=1 OR last_seen>?)", p.Session, u.ID, u.Version, m.now().Unix(), m.now().Unix()-int64(idle*60)).Scan(&exists)
 		if e != nil {
 			return nil
 		}
@@ -123,23 +130,33 @@ func (m *Manager) issueSession(w http.ResponseWriter, r *http.Request, u User, r
 	}
 	now := m.now().Unix()
 	expiry := now + 12*3600
+	if remember {
+		expiry = now + rememberedSessionLifetime
+	}
 	p := Principal{UserID: u.ID, Version: u.Version, Session: digest(token), CSRF: csrf, AuthAt: now}
-	_, e = m.db.Exec("INSERT INTO access_session(digest,user_id,user_version,csrf,created_at,last_seen,expires_at,auth_at) VALUES(?,?,?,?,?,?,?,?)", p.Session, u.ID, u.Version, csrf, now, now, expiry, now)
+	tx, e := m.db.Begin()
+	if e != nil {
+		return Principal{}, e
+	}
+	defer tx.Rollback()
+	_, e = tx.Exec("INSERT INTO access_session(digest,user_id,user_version,csrf,created_at,last_seen,expires_at,auth_at,remembered,token_digest,rotated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", p.Session, u.ID, u.Version, csrf, now, now, expiry, now, remember, digest(token), now)
 	if e != nil {
 		return Principal{}, e
 	}
 	if old, e := r.Cookie(cookieName); e == nil {
-		if _, e = m.db.Exec("DELETE FROM access_session WHERE digest=?", digest(old.Value)); e != nil {
+		hash := digest(old.Value)
+		if _, e = tx.Exec("DELETE FROM access_session WHERE token_digest=? OR (previous_digest=? AND previous_until>?)", hash, hash, now); e != nil {
 			return Principal{}, e
 		}
 	}
-	_, _ = m.db.Exec("DELETE FROM access_session WHERE expires_at<? OR (user_id=? AND digest NOT IN (SELECT digest FROM access_session WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 10))", now, u.ID, u.ID)
-	cookie := &http.Cookie{Name: cookieName, Value: token, Path: "/", HttpOnly: true, Secure: HTTPS(r), SameSite: http.SameSiteStrictMode}
-	if remember {
-		cookie.MaxAge = 12 * 3600
-		cookie.Expires = time.Unix(expiry, 0)
+	_, e = tx.Exec("DELETE FROM access_session WHERE expires_at<=? OR (user_id=? AND digest NOT IN (SELECT digest FROM access_session WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 10))", now, u.ID, u.ID)
+	if e != nil {
+		return Principal{}, e
 	}
-	http.SetCookie(w, cookie)
+	if e = tx.Commit(); e != nil {
+		return Principal{}, e
+	}
+	setSessionCookie(w, r, token, remember, expiry, now)
 	return p, nil
 }
 func clearCookie(w http.ResponseWriter, r *http.Request) {
