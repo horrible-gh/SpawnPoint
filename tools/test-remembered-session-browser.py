@@ -71,7 +71,9 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-remember-test-') as work:
             return db.execute(statement, args).fetchall()
 
     def logged_in(page):
-        page.wait_for_function("state.actor !== null && state.route === '/processes'")
+        # DOM assertions work under the product's strict CSP; string eval does not.
+        expect(page.locator('[data-act="new-process"]')).to_be_visible()
+        expect(page.locator('#loginForm')).to_have_count(0)
         check(page.locator('#loginForm').count() == 0, 'login form unexpectedly visible')
 
     def login(page, remember):
