@@ -123,6 +123,38 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
             expect(page.locator('#authHelpDialog')).not_to_be_visible()
             expect(page.locator('[data-act="new-process"]')).to_be_visible()
             check(page.locator('#previewRail').count()==0, 'no role-impersonation preview rail')
+
+            # Simulate a temporary process-state network outage after login.
+            # It must not repeatedly toast a raw fetch exception or sign out the
+            # browser, even when /auth/me answers but /api/access/state does not.
+            if not os.environ.get('SPAWNPOINT_BROWSER_BRIDGE'):
+                page.evaluate("""() => {
+                    window.__connectionToasts = [];
+                    const original = toast;
+                    toast = (message, kind) => {
+                        if (String(message).includes('서버 연결'))
+                            window.__connectionToasts.push(String(message));
+                        return original(message, kind);
+                    };
+                }""")
+                page.route('**/api/access/state', lambda route: route.abort())
+                expect(page.locator('#connectionStatus')).to_contain_text('연결 끊김', timeout=10000)
+                check(page.locator('[data-act="logout"]').count() == 1,
+                      'network loss must not log out a valid user')
+                page.wait_for_timeout(6500)
+                check(page.evaluate('window.__connectionToasts.length') == 1,
+                      'network outage must not produce repeated fetch toasts')
+                check('Failed to fetch' not in page.locator('#toast').inner_text(),
+                      'raw fetch exception leaked to user toast')
+                page.unroute('**/api/access/state')
+                page.evaluate('async()=>{connection.retryAt=0;await refreshBackground(true);}')
+                expect(page.locator('#connectionStatus')).to_contain_text('LOCALHOST', timeout=10000)
+                check(page.evaluate('!connection.offline') and
+                      page.locator('[data-act="logout"]').count() == 1,
+                      'connection recovery did not preserve the session')
+                check(page.evaluate('window.__connectionToasts.length') == 2,
+                      'connection restoration must be reported once')
+
             if not os.environ.get('SPAWNPOINT_BROWSER_BRIDGE'):
                 cookies = page.context.cookies()
                 check(any(c['name']=='sp_session' and c['httpOnly'] and c['sameSite']=='Strict' for c in cookies),'real browser HttpOnly SameSite session')
