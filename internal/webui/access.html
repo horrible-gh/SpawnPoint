@@ -668,7 +668,7 @@ let db={users:[],userGroups:[],processGroups:[],processes:[],tokens:[],audit:[],
 let state={actor:null,route:'/login',os:'',transport:'http',filter:'',pgFilter:'all',procSelected:null,checked:[],userFilter:'',userRole:'all',groupTab:'users',policyGroup:'pg-default',policyTarget:'group',effectiveUser:'',policyDraft:null,policyDirty:false,securityTab:'auth',loginMode:'local',auditQuery:'',auditKind:'all'};
 let modalState=null,confirmCallback=null,lastFocus=null,toastTimer;
 const app={csrf:'',revision:0,runtime:{os:'',secure:false,https:false,server:'SpawnPoint',os_login_available:false},setup:false,setupMode:'os',ready:false};
-const connection={offline:false,retries:0,retryAt:0};
+const connection={offline:false,retries:0,retryAt:0,recovering:false};
 function updateConnectionStatus(){
  const el=$('#connectionStatus');
  if(!el)return;
@@ -703,7 +703,7 @@ async function request(path,body,method){
   noteConnectionFailure(path,cause);
   throw error;
  }
- noteConnectionSuccess();
+ if(!connection.recovering)noteConnectionSuccess();
  let data;try{data=await response.json();}catch{throw new Error('서버 응답을 읽지 못했습니다.');}
  if(!response.ok||data.ok===false){const error=new Error(data.error?.message||`HTTP ${response.status}`);error.code=data.error?.code;error.status=response.status;throw error;}
  return data;
@@ -1305,6 +1305,7 @@ async function refreshBackground(reenter=false){
     processOrderBusy||processDragId||document.activeElement?.matches('input,select,textarea'))return;
  if(!reenter&&connection.offline&&Date.now()<connection.retryAt)return;
  refreshing=true;
+ connection.recovering=reenter||connection.offline;
  try{
   if(reenter||connection.offline){
    // Re-entering a sleeping tab checks the cookie and renews remembered
@@ -1313,15 +1314,19 @@ async function refreshBackground(reenter=false){
    if(identity.user||db.settings.guest)await loadState();
    else{db.processes=[];db.users=[];db.processGroups=[];db.userGroups=[];state.route='/login';}
   }else await loadState();
+  // Do not report recovery merely because /auth/me answered if the
+  // subsequent process-state request is still unreachable.
+  noteConnectionSuccess();
   render(true);
   if(state.route==='/processes')await pollLog();
  }catch(error){
+  if(!error.network&&error.status)noteConnectionSuccess();
   if(error.network){
    connection.retries++;
    connection.retryAt=Date.now()+Math.min(60000,4000*2**Math.min(connection.retries-1,4));
   }
   handleError(error);
- }finally{refreshing=false;}
+ }finally{connection.recovering=false;refreshing=false;}
 }
 setInterval(()=>{void refreshBackground();},4000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshBackground(true);});
