@@ -29,7 +29,7 @@ func TestLogFilenameMigrationPreservesLegacyCommands(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, b, err := s.Migrate()
-	if err != nil || a != 6 || b != 1 {
+	if err != nil || a != 6 || b != 2 {
 		t.Fatalf("migration result: %d, %d, %v", a, b, err)
 	}
 	rows, err := s.ListEntries()

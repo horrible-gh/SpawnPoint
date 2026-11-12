@@ -91,7 +91,12 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	p, authErr := m.principal(r)
 	if authErr != nil {
-		clearCookie(w, r)
+		if !errors.Is(authErr, errLogin) {
+			fail(w, 503, "세션을 확인하지 못했습니다. 다시 시도하세요")
+			return
+		}
+		// A delayed response carrying an old token must not erase a newer
+		// cookie issued by another tab. Explicit logout still clears it.
 		if route == "/auth/me" {
 			p = Principal{}
 		} else {
@@ -102,6 +107,10 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if route == "/auth/me" {
 		if r.Method != "GET" {
 			fail(w, 405, "GET 요청이 필요합니다")
+			return
+		}
+		if e := m.renewRememberedSession(w, r, p); e != nil {
+			fail(w, 503, "세션을 갱신하지 못했습니다. 다시 시도하세요")
 			return
 		}
 		m.mu.RLock()
@@ -278,6 +287,10 @@ func (m *Manager) accountAction(w http.ResponseWriter, r *http.Request, p Princi
 	copy := *u
 	m.mu.RUnlock()
 	if r.URL.Path == "/auth/heartbeat" {
+		if e := m.renewRememberedSession(w, r, p); e != nil {
+			fail(w, 503, "세션을 갱신하지 못했습니다. 다시 시도하세요")
+			return
+		}
 		send(w, 200, map[string]any{"ok": true})
 		return
 	}

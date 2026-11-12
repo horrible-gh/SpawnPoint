@@ -12,7 +12,7 @@ func TestAutoStartMigrationPreservesLegacyEntryAndDefaultsOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	scripts, err := s.adapter.Migrations()
-	if err != nil || len(scripts) != 7 {
+	if err != nil || len(scripts) != 8 {
 		t.Fatalf("migration list: %d, %v", len(scripts), err)
 	}
 	for _, script := range scripts[:3] {
@@ -27,7 +27,7 @@ func TestAutoStartMigrationPreservesLegacyEntryAndDefaultsOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	already, applied, err := s.Migrate()
-	if err != nil || already != 3 || applied != 4 {
+	if err != nil || already != 3 || applied != 5 {
 		t.Fatalf("upgrade = %d, %d, %v", already, applied, err)
 	}
 	rows, err := s.ListEntries()
@@ -47,7 +47,7 @@ func TestAutoStartMigrationPreservesLegacyEntryAndDefaultsOff(t *testing.T) {
 
 	reopened := openAt(t, path)
 	already, applied, err = reopened.Migrate()
-	if err != nil || already != 7 || applied != 0 {
+	if err != nil || already != 8 || applied != 0 {
 		t.Fatalf("second migration = %d, %d, %v", already, applied, err)
 	}
 	rows, err = reopened.ListEntries()
@@ -68,7 +68,7 @@ func TestAutoStartMigrationPreservesLegacyEntryAndDefaultsOff(t *testing.T) {
 func TestAutoStartFreshDatabaseAndConstraint(t *testing.T) {
 	s := openTemp(t)
 	already, applied, err := s.Migrate()
-	if err != nil || already != 0 || applied != 7 {
+	if err != nil || already != 0 || applied != 8 {
 		t.Fatalf("fresh migration = %d, %d, %v", already, applied, err)
 	}
 	if err := s.SaveEntry(RunnerEntry{ID: "proc_12345678", Label: "new", Cmd: "echo hi"}); err != nil {

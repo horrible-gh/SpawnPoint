@@ -1,0 +1,50 @@
+name: Verify remembered sessions
+on:
+  push:
+    branches: [main, fix/remembered-sessions-20261112]
+    paths:
+      - 'internal/access/**'
+      - 'internal/store/**'
+      - 'internal/dialect/**'
+      - 'tools/test-remembered-session-browser.py'
+      - '.github/workflows/verify-sessions.yml'
+permissions:
+  contents: read
+env:
+  TZ: Asia/Tokyo
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Windows test timezone
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: tzutil /s 'Tokyo Standard Time'
+      - name: Build and session regression
+        shell: bash
+        run: |
+          go build ./...
+          go test ./... -count=1
+          go test ./internal/access -run 'RememberedSession|OrdinarySession|SessionDatabase' -count=1 -v
+          go build -o session-test-server.exe ./cmd/spawnpoint
+          python tools/test-access-api.py ./session-test-server.exe
+      - name: Race detection
+        if: runner.os == 'Linux'
+        run: go test -race ./internal/access ./internal/store -count=1
+      - name: Actual browser persistence and token renewal
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m pip install playwright==1.57.0
+          python3 -m playwright install --with-deps chromium
+          python3 tools/test-remembered-session-browser.py ./session-test-server.exe
