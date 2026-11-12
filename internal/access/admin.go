@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -138,6 +139,9 @@ func validateState(s *State) error {
 		return errors.New("기본 프로세스 그룹은 삭제할 수 없습니다")
 	}
 	for _, p := range s.Processes {
+		if p.SortOrder < 0 {
+			return errors.New("프로세스 표시 순서가 올바르지 않습니다")
+		}
 		if !pgs[p.PG] {
 			return errors.New("프로세스 소속 그룹이 없습니다")
 		}
@@ -436,6 +440,28 @@ func (m *Manager) applyAdmin(s *State, in AdminInput, secret *string) (action, t
 			return bad("권한 적용 대상을 확인하세요")
 		}
 		return "권한 변경", in.ID, "개별 예외는 해당 대상에만 적용", nil
+	case "process.order":
+		// Require a complete permutation, not a filtered or stale subset.
+		// This affects presentation metadata only; running commands stay put.
+		live := m.runner.List()
+		if len(in.IDs) != len(live) || len(in.IDs) > 10000 {
+			return bad("프로세스 목록이 변경되었습니다. 새로고침 후 다시 시도하세요")
+		}
+		known := make(map[string]bool, len(live))
+		for _, p := range live {
+			known[p.ID] = true
+		}
+		seen := make(map[string]bool, len(in.IDs))
+		for i, id := range in.IDs {
+			if !known[id] || seen[id] {
+				return bad("프로세스 순서에 중복 또는 존재하지 않는 대상이 있습니다")
+			}
+			seen[id] = true
+			meta := s.meta(id)
+			meta.SortOrder = i + 1
+			s.Processes[id] = meta
+		}
+		return "프로세스 표시 순서 변경", "프로세스 목록", fmt.Sprintf("%d개 순서 저장", len(in.IDs)), nil
 	case "bulk":
 		if len(in.IDs) == 0 || len(in.IDs) > 500 {
 			return bad("1~500개 프로세스를 선택하세요")
@@ -597,7 +623,7 @@ func (m *Manager) snapshot(p Principal) (map[string]any, error) {
 		}
 		meta := m.state.meta(v.ID)
 		visibleGroups[meta.PG] = true
-		row := map[string]any{"id": v.ID, "name": v.Label, "pg": meta.PG, "status": v.Status, "pid": v.PID, "uptime": "—", "auto": v.AutoStart, "protected": meta.Protected || v.RunAs != nil, "overrides": map[string]Grant{}, "guest": meta.Guest, "env": map[string]string{}, "cmd": "", "cwd": "", "account": "Service account", "capabilities": cap, "error": ""}
+		row := map[string]any{"id": v.ID, "name": v.Label, "pg": meta.PG, "sort_order": meta.SortOrder, "status": v.Status, "pid": v.PID, "uptime": "—", "auto": v.AutoStart, "protected": meta.Protected || v.RunAs != nil, "overrides": map[string]Grant{}, "guest": meta.Guest, "env": map[string]string{}, "cmd": "", "cwd": "", "account": "Service account", "capabilities": cap, "error": ""}
 		if v.Status == runnerRunning && v.StartedAt != nil {
 			row["uptime"] = m.now().Sub(*v.StartedAt).Truncate(time.Second).String()
 		}
@@ -622,10 +648,22 @@ func (m *Manager) snapshot(p Principal) (map[string]any, error) {
 			row["overrides"] = meta.Overrides
 		}
 		if u == nil {
-			row = map[string]any{"id": v.ID, "name": v.Label, "pg": meta.PG, "status": v.Status, "capabilities": cap}
+			row = map[string]any{"id": v.ID, "name": v.Label, "pg": meta.PG, "sort_order": meta.SortOrder, "status": v.Status, "capabilities": cap}
 		}
 		processes = append(processes, row)
 	}
+	// Sort UI snapshots only. Auto-start/run order is unchanged.
+	sort.SliceStable(processes, func(i, j int) bool {
+		a, _ := processes[i]["sort_order"].(int)
+		b, _ := processes[j]["sort_order"].(int)
+		if a == 0 {
+			return false
+		}
+		if b == 0 {
+			return true
+		}
+		return a < b
+	})
 	for _, g := range m.state.ProcessGroups {
 		create := m.mayCreate(p, g.ID)
 		if !isAdmin && !visibleGroups[g.ID] && !create {
