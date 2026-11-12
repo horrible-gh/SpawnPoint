@@ -48,6 +48,7 @@ type ProcessMeta struct {
 	PG        string           `json:"pg"`
 	Overrides map[string]Grant `json:"overrides"`
 	Protected bool             `json:"protected"`
+	SortOrder int              `json:"sort_order,omitempty"`
 	Guest     *bool            `json:"guest"`
 }
 type Settings struct {
