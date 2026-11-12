@@ -1,17 +1,22 @@
 'use strict';
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
+const crypto=require('node:crypto');
 const {spawn}=require('node:child_process');
 const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
 (async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'spawnpoint-ui-'));
  const exe=path.resolve(process.argv[2]); const port=18529;
- const proc=spawn(exe,[],{env:{...process.env,SPAWNPOINT_HOST:'127.0.0.1',SPAWNPOINT_PORT:String(port),SPAWNPOINT_DB_PATH:path.join(dir,'db'),SPAWNPOINT_LOG_DIR:path.join(dir,'logs'),SPAWNPOINT_API_TOKENS:''},stdio:'ignore'});
+ const setupToken=crypto.randomBytes(32).toString('hex');
+ const adminPassword='Test!'+crypto.randomBytes(24).toString('hex');
+ const proc=spawn(exe,[],{env:{...process.env,SPAWNPOINT_HOST:'127.0.0.1',SPAWNPOINT_PORT:String(port),SPAWNPOINT_DB_PATH:path.join(dir,'db'),SPAWNPOINT_LOG_DIR:path.join(dir,'logs'),SPAWNPOINT_API_TOKENS:'',SPAWNPOINT_SETUP_TOKEN:setupToken},stdio:'ignore'});
  let browser;
  try{
   for(let i=0;i<100;i++){try{if((await fetch(`http://127.0.0.1:${port}/healthz`)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
   browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1440,height:1000}});
   const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+  const setup=await page.request.post(`http://127.0.0.1:${port}/auth/setup`,{data:{login:'test-admin',name:'Test administrator',password:adminPassword,setup_token:setupToken}});
+  assert.equal(setup.status(),200,'administrator setup failed');
   await page.goto(`http://127.0.0.1:${port}`);
   await page.locator('#newBtn').click();await page.locator('#fLabel').fill('FlowGate-Agent');await page.locator('#fCmd').fill('printf "%s\\n" "preview test"');
   await page.locator('#runSpecific').click();await page.locator('#usernameInput').fill(process.env.SPAWNPOINT_RUNAS_TEST_USER);await page.locator('#passwordInput').fill(process.env.SPAWNPOINT_RUNAS_TEST_PASSWORD);
