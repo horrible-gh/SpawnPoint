@@ -18,19 +18,19 @@ const fs=require('node:fs');const os=require('node:os');const path=require('node
   const setup=await page.request.post(`http://127.0.0.1:${port}/auth/setup`,{data:{login:'test-admin',name:'Test administrator',password:adminPassword,setup_token:setupToken}});
   assert.equal(setup.status(),200,'administrator setup failed');
   await page.goto(`http://127.0.0.1:${port}`);
-  await page.locator('#newBtn').click();await page.locator('#fLabel').fill('FlowGate-Agent');await page.locator('#fCmd').fill('printf "%s\\n" "preview test"');
-  await page.locator('#runSpecific').click();await page.locator('#usernameInput').fill(process.env.SPAWNPOINT_RUNAS_TEST_USER);await page.locator('#passwordInput').fill(process.env.SPAWNPOINT_RUNAS_TEST_PASSWORD);
-  assert.equal(await page.locator('#passwordInput').getAttribute('type'),'password');
-  await page.locator('#dlgSave').click();await page.waitForFunction(()=>!document.getElementById('formBackdrop').classList.contains('open'));
+  await page.locator('[data-act="new-process"]').click();await page.locator('#processName').fill('FlowGate-Agent');await page.locator('#processCommand').fill('printf "%s\\n" "preview test"');
+  await page.locator('[data-act="editor-specific"]').click();await page.locator('#executionUser').fill(process.env.SPAWNPOINT_RUNAS_TEST_USER);await page.locator('#executionPassword').fill(process.env.SPAWNPOINT_RUNAS_TEST_PASSWORD);
+  assert.equal(await page.locator('#executionPassword').getAttribute('type'),'password');
+  await page.locator('#modalForm button[name="mode"][value="save"]').click();await page.waitForFunction(()=>!document.getElementById('modal').open);
   const list=await (await page.request.get(`http://127.0.0.1:${port}/processes`)).json();assert.equal(list.processes.length,1);assert.equal(list.processes[0].status,'stopped');assert.ok(list.processes[0].run_as.has_password);
   assert.ok(!JSON.stringify(list).includes(process.env.SPAWNPOINT_RUNAS_TEST_PASSWORD));
-  await page.locator('button[data-act="edit"]').first().click();assert.equal(await page.locator('#passwordInput').inputValue(),'');
-  assert.equal(await page.locator('#usernameInput').inputValue(),process.env.SPAWNPOINT_RUNAS_TEST_USER);
+  await page.locator('button[data-act="edit-process"]').first().click();assert.equal(await page.locator('#executionPassword').inputValue(),'');
+  assert.equal(await page.locator('#executionUser').inputValue(),process.env.SPAWNPOINT_RUNAS_TEST_USER);
   fs.mkdirSync('artifacts',{recursive:true});await page.screenshot({path:'artifacts/editor-desktop.png',fullPage:true});
   for(const viewport of [{width:390,height:844},{width:2560,height:1440}]){
     await page.setViewportSize(viewport);
-    const box=await page.locator('#formDlg').boundingBox();assert.ok(box.x>=-1 && box.x+box.width<=viewport.width+1,'dialog overflows viewport');
-    assert.ok(await page.locator('#dlgSave').isVisible());await page.screenshot({path:`artifacts/editor-${viewport.width}.png`,fullPage:true});
+    const box=await page.locator('#modal').boundingBox();assert.ok(box.x>=-1 && box.x+box.width<=viewport.width+1,'dialog overflows viewport');
+    assert.ok(await page.locator('#modalForm button[name="mode"][value="save"]').isVisible());await page.screenshot({path:`artifacts/editor-${viewport.width}.png`,fullPage:true});
   }
   assert.deepEqual(errors,[]);console.log('PASS: actual browser/API save, credential redaction, edit retain, responsive dialog and screenshots');
  }finally{if(browser)await browser.close();proc.kill('SIGTERM');await new Promise(r=>{if(proc.exitCode!==null)return r();proc.on('exit',r);setTimeout(r,10000);});fs.rmSync(dir,{recursive:true,force:true});}
