@@ -113,6 +113,25 @@ dialog{padding:0;color:var(--text);border:1px solid #414e5e;background:var(--sur
 .reauth-dialog .modal-error:empty{display:none}
 @media(max-width:560px){.acl-rules{padding:12px}.acl-rule{padding:14px}.acl-lifecycle-grid{grid-template-columns:1fr}.reauth-dialog .dialog-head,.reauth-dialog .dialog-body{padding:18px}.reauth-dialog .dialog-foot{padding:14px 18px}.reauth-dialog .dialog-foot .btn{min-width:80px}}
 
+
+/* Dock the process list and log panel within the available viewport. */
+.page.process-page{height:calc(100dvh - 64px);display:flex;flex-direction:column;min-height:0;overflow:hidden;padding-bottom:16px}
+.process-page>.page-title,.process-page>.readonly-strip{flex:none}
+.process-workspace{display:grid;grid-template-rows:minmax(0,var(--process-list-fr,3fr)) 12px minmax(0,var(--process-log-fr,2fr));flex:1 1 auto;min-height:0;min-width:0}
+.process-workspace.no-logs{grid-template-rows:minmax(0,1fr)}
+.process-workspace>.process-list-panel{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.process-list-panel>.table-scroll{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain}
+.process-list-panel>.toolbar,.process-list-panel>.table-bottom,.process-list-panel>.bulkbar,.process-list-panel>.process-drop-groups{flex:none}
+.process-list-panel thead th{position:sticky;top:0;z-index:2}
+.process-log-splitter{display:flex;align-items:center;justify-content:center;min-height:12px;cursor:row-resize;touch-action:none;user-select:none;outline-offset:-2px}
+.process-log-splitter span{display:block;width:58px;height:3px;border-radius:5px;background:#415267;transition:background .12s}
+.process-log-splitter:hover span,.process-log-splitter:focus-visible span,.process-log-splitter.dragging span{background:#82b6f5}
+.process-workspace>.log-dock{display:flex;flex-direction:column;min-height:0;min-width:0;margin-top:0;overflow:hidden}
+.log-dock>.log-head{flex:none;min-height:48px;flex-wrap:wrap}
+.log-dock>.log-body{flex:1 1 auto;min-height:0;max-height:none!important;margin:0;overflow:auto;overscroll-behavior:contain}
+.process-action-feedback{margin-left:6px;white-space:nowrap}
+@media(max-width:760px){.page.process-page{height:calc(100dvh - 57px);padding-bottom:12px}.log-dock>.log-head{gap:6px;padding:9px 11px}.log-dock>.log-body{padding:10px 12px}}
+@media(max-height:480px){.page.process-page{height:auto;min-height:445px;overflow:visible}.process-workspace{min-height:280px}}
 </style>
 </head><body>
 
@@ -592,6 +611,18 @@ const I18N = {
  '서버 연결 끊김 · 재연결 중':['Connection lost · reconnecting','接続が切れました・再接続中'],
  '서버 연결 복구':['Connection restored','接続が復旧しました'],
  '서버 연결 복구를 자동으로 시도합니다.':['Reconnecting automatically.','自動的に再接続を試みます。'],
+
+ '실행 요청 중':['Starting…','起動要求中'],
+ '중지 요청 중':['Stopping…','停止要求中'],
+ '재시작 요청 중':['Restarting…','再起動要求中'],
+ '실행 실패':['Run failed','起動失敗'],
+ '중지 실패':['Stop failed','停止失敗'],
+ '재시작 실패':['Restart failed','再起動失敗'],
+ '실행 확인 필요':['Check run status','起動状態を確認'],
+ '중지 확인 필요':['Check stop status','停止状態を確認'],
+ '재시작 확인 필요':['Check restart status','再起動状態を確認'],
+ '프로세스 목록과 로그 높이 조절':['Resize process list and logs','プロセス一覧とログの高さ調整'],
+ '위아래 드래그 · 더블클릭: 기본 높이':['Drag to resize · double-click to reset','ドラッグで調整・ダブルクリックでリセット'],
 };
 const I18N_CODES=['en','ja'];
 const I18N_STORAGE='spawnpoint.ui.language';
@@ -694,6 +725,35 @@ function noteConnectionSuccess(){
  updateConnectionStatus();
  if(app.ready)toast('서버 연결 복구');
 }
+
+const LOG_DOCK_STORAGE='spawnpoint.processLogDock.v1';
+function restoreLogDockRatio(){
+ try{const saved=Number(localStorage.getItem(LOG_DOCK_STORAGE));return Number.isFinite(saved)&&saved>=0.15&&saved<=0.85?saved:0.58;}
+ catch{return 0.58;}
+}
+let logDockRatio=restoreLogDockRatio(),logDockDrag=null;
+const processFeedback=new Map();
+function processActionFeedback(p){
+ const feedback=processFeedback.get(p.id);
+ if(!feedback)return '';
+ const suffix=feedback.status==='pending'?' 요청 중':feedback.status==='unknown'?' 확인 필요':' 실패';
+ return '<span class="process-action-feedback">'+badge(feedback.label+suffix,feedback.status==='pending'?'blue':'amber')+'</span>';
+}
+function setLogDockRatio(next,persist=false){
+ const dock=document.querySelector('.process-workspace'),handle=document.querySelector('[data-process-splitter]');
+ if(!dock||!handle)return;
+ const available=Math.max(1,dock.clientHeight-handle.offsetHeight);
+ const listMin=Math.min(140,available*0.42),logMin=Math.min(120,available*0.42);
+ logDockRatio=Math.max(listMin/available,Math.min(1-logMin/available,next));
+ dock.style.setProperty('--process-list-fr',logDockRatio+'fr');
+ dock.style.setProperty('--process-log-fr',(1-logDockRatio)+'fr');
+ handle.setAttribute('aria-valuenow',String(Math.round(logDockRatio*100)));
+ if(persist)try{localStorage.setItem(LOG_DOCK_STORAGE,String(logDockRatio));}catch{}
+}
+function processDockDivider(){
+ return '<div class="process-log-splitter" data-process-splitter role="separator" tabindex="0" aria-label="프로세스 목록과 로그 높이 조절" aria-orientation="horizontal" aria-valuemin="15" aria-valuemax="85" aria-valuenow="'+Math.round(logDockRatio*100)+'" title="위아래 드래그 · 더블클릭: 기본 높이"><span aria-hidden="true"></span></div>';
+}
+
 let logState={id:null,offset:null,text:'',paused:false},reauthResolve=null;
 async function request(path,body,method){
  const options={method:method||(body===undefined?'GET':'POST'),credentials:'same-origin',headers:{}};
@@ -744,7 +804,7 @@ function handleError(error){
  if($('#modal').open&&$('#modalError'))modalError(error.message);else toast(error.message);
 }
 async function saved(message='저장했습니다.') {closeModal(true);state.policyDirty=false;state.policyDraft=null;await refresh();toast(message);}
-function logPanel(p){return `<section class="panel log-panel" data-process-id="${esc(p.id)}"><div class="log-head">${icon('terminal')}<h3>${esc(p.name)}</h3><span class="muted">로그</span><div class="spacer"></div>${button('처음부터','logs-start','quiet small')}${button(logState.paused?'더 읽기':'일시 정지','logs-toggle','quiet small')}<span class="hint mono">LIVE</span></div><pre class="log-body" id="liveLog" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto">${esc(logState.id===p.id?logState.text:'로그를 읽는 중…')}</pre></section>`;}
+function logPanel(p){return `<section class="panel log-panel log-dock" data-process-id="${esc(p.id)}"><div class="log-head">${icon('terminal')}<h3>${esc(p.name)}</h3><span class="muted">로그</span>${processActionFeedback(p)}<div class="spacer"></div>${button('처음부터','logs-start','quiet small')}${button(logState.paused?'더 읽기':'일시 정지','logs-toggle','quiet small')}<span class="hint mono">LIVE</span></div><pre class="log-body" id="liveLog" style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(logState.id===p.id?logState.text:'로그를 읽는 중…')}</pre></section>`;}
 let logBusy=false;
 async function pollLog(force=false){
  if(logBusy||connection.offline||state.route!=='/processes'||!state.procSelected)return;
@@ -781,8 +841,27 @@ async function serverImpact(payload){
 }
 async function policyImpact(){return serverImpact({action:'policy',revision:state.policyRevision,id:state.policyTarget==='group'?state.policyGroup:state.policyTarget,target:state.policyTarget==='group'?'group':'process',rules:clone(state.policyDraft)});}
 async function processAction(action,id){
- const p=proc(id);if(!p||!access(current(),p).run)return;const label={run:'실행',stop:'중지',restart:'재시작'}[action];
- const perform=async()=>{try{const result=await request('/processes/'+encodeURIComponent(id)+'/'+action,{});state.procSelected=id;if(action==='run'||action==='restart')logState={id,offset:null,text:'',paused:false,generation:null};await refresh();if(result.process?.status==='failed')throw new Error(result.process.error||'프로세스를 실행하지 못했습니다.');toast(label+' 요청을 처리했습니다.');}catch(e){handleError(e);}};
+ const p=proc(id);if(!p||!access(current(),p).run||processFeedback.get(id)?.status==='pending')return;
+ const label={run:'실행',stop:'중지',restart:'재시작'}[action];
+ const perform=async()=>{
+  state.procSelected=id;
+  processFeedback.set(id,{label,status:'pending'});
+  if(action==='run'||action==='restart')logState={id,offset:null,text:'',paused:false,generation:null};
+  render();
+  try{
+   const result=await request('/processes/'+encodeURIComponent(id)+'/'+action,{});
+   await refresh();
+   if(result.process?.status==='failed')throw new Error(result.process.error||'프로세스를 실행하지 못했습니다.');
+   processFeedback.delete(id);
+   render();
+   void pollLog(true);
+   toast(label+' 요청을 처리했습니다.');
+  }catch(error){
+   processFeedback.set(id,{label,status:error.network?'unknown':'error'});
+   render();
+   handleError(error);
+  }
+ };
  if(action==='stop'||action==='restart')ask(p.name+' '+label,'실제 프로세스와 하위 프로세스에 적용됩니다.',label,perform);else await perform();
 }
 const current=()=>db.users.find(u=>u.id===state.actor)||null;
@@ -843,7 +922,7 @@ function render(preserveLog=false){
  if(state.route==='/login'){$('#root').innerHTML=renderLogin();localizeAll();return;}
  const labels={'/processes':'프로세스','/account':'내 계정','/admin':'관리 개요','/admin/users':'사용자','/admin/groups':'그룹','/admin/permissions':'프로세스 권한','/admin/security':'인증·보안','/admin/audit':'감사 기록'};
  const user=current();
- $('#root').innerHTML=`<div class="mobile-mask" data-act="close-menu"></div><div class="shell"><aside class="sidebar" aria-label="주 메뉴"><div class="mobile-menu-close">${ib('메뉴 닫기','close-menu','x')}</div>${brand()}<nav><div class="nav-group"><span class="nav-label">WORKSPACE</span>${nav('/processes','프로세스','terminal')}${user?nav('/account','내 계정','user'):''}</div>${isAdmin()?`<div class="nav-group"><span class="nav-label">ADMINISTRATION</span>${nav('/admin','관리 개요','grid')}${nav('/admin/users','사용자','users')}${nav('/admin/groups','그룹','layers')}${nav('/admin/permissions','프로세스 권한','shield')}${nav('/admin/security','인증·보안','key')}${nav('/admin/audit','감사 기록','history')}</div>`:''}</nav><div class="sidebar-footer"><div class="server-name"><span class="dot green"></span>${esc(app.runtime.server)}</div><div class="hint">${state.os==='windows'?'Windows':'Linux'} · 프로세스 관리 서버</div></div></aside><section class="workspace"><header class="topbar">${ib('메뉴 열기','menu','menu','class="menu-toggle"').replace('class="icon-btn"','class="icon-btn menu-toggle"').replace('class="menu-toggle"','')}<div class="breadcrumb">${state.route.startsWith('/admin')?'관리자':'워크스페이스'}${icon('chevron')}<span class="current">${labels[state.route]||'프로세스'}</span></div><div class="spacer"></div>${languageSelect()}<span class="connection ${connection.offline?'disconnected':''}" id="connectionStatus" role="status" aria-live="polite">${connection.offline?icon('alert')+'연결 끊김':icon('lock')+(state.transport==='https'?'HTTPS':state.transport==='local'?'LOCALHOST':'HTTP')}</span><button class="user-button" data-act="${user?'account':'login'}"><div class="avatar">${user?esc(userIdentity(user).slice(0,2).toUpperCase()):'—'}</div><span><strong>${user?esc(user.name):'비로그인'}</strong><small>${user?roles[user.role].label:'공개 상태만 조회'}</small></span></button>${ib(user?'로그아웃':'로그인',user?'logout':'login','logout')}</header><main class="page" id="mainContent">${view()}</main></section></div>`;
+ $('#root').innerHTML=`<div class="mobile-mask" data-act="close-menu"></div><div class="shell"><aside class="sidebar" aria-label="주 메뉴"><div class="mobile-menu-close">${ib('메뉴 닫기','close-menu','x')}</div>${brand()}<nav><div class="nav-group"><span class="nav-label">WORKSPACE</span>${nav('/processes','프로세스','terminal')}${user?nav('/account','내 계정','user'):''}</div>${isAdmin()?`<div class="nav-group"><span class="nav-label">ADMINISTRATION</span>${nav('/admin','관리 개요','grid')}${nav('/admin/users','사용자','users')}${nav('/admin/groups','그룹','layers')}${nav('/admin/permissions','프로세스 권한','shield')}${nav('/admin/security','인증·보안','key')}${nav('/admin/audit','감사 기록','history')}</div>`:''}</nav><div class="sidebar-footer"><div class="server-name"><span class="dot green"></span>${esc(app.runtime.server)}</div><div class="hint">${state.os==='windows'?'Windows':'Linux'} · 프로세스 관리 서버</div></div></aside><section class="workspace"><header class="topbar">${ib('메뉴 열기','menu','menu','class="menu-toggle"').replace('class="icon-btn"','class="icon-btn menu-toggle"').replace('class="menu-toggle"','')}<div class="breadcrumb">${state.route.startsWith('/admin')?'관리자':'워크스페이스'}${icon('chevron')}<span class="current">${labels[state.route]||'프로세스'}</span></div><div class="spacer"></div>${languageSelect()}<span class="connection ${connection.offline?'disconnected':''}" id="connectionStatus" role="status" aria-live="polite">${connection.offline?icon('alert')+'연결 끊김':icon('lock')+(state.transport==='https'?'HTTPS':state.transport==='local'?'LOCALHOST':'HTTP')}</span><button class="user-button" data-act="${user?'account':'login'}"><div class="avatar">${user?esc(userIdentity(user).slice(0,2).toUpperCase()):'—'}</div><span><strong>${user?esc(user.name):'비로그인'}</strong><small>${user?roles[user.role].label:'공개 상태만 조회'}</small></span></button>${ib(user?'로그아웃':'로그인',user?'logout':'login','logout')}</header><main class="page ${state.route==='/processes'?'process-page':''}" id="mainContent">${view()}</main></section></div>`;
  if(existingLog&&state.route==='/processes'){
   const replacement=$('#root .log-panel');
   if(replacement&&replacement.dataset.processId===existingLog.dataset.processId){
@@ -913,15 +992,15 @@ function overviewView(){
 }
 function filteredProcesses(){const user=current();return db.processes.filter(p=>access(user,p).view&&(state.pgFilter==='all'||p.pg===state.pgFilter)&&(p.name.toLowerCase().includes(state.filter.toLowerCase())||pg(p.pg).name.toLowerCase().includes(state.filter.toLowerCase())));}
 function processActions(p,a){
- const id=`data-id="${p.id}"`;
+ const id=`data-id="${p.id}"`,busy=processFeedback.get(p.id)?.status==='pending';
  return `<div class="row-actions">
   <div class="action-group">
    ${ib(a.edit?'프로세스 편집':p.protected?'보호 프로세스: 관리자만 설정 편집':'편집 권한 없음','edit-process','edit',`${id} ${a.edit?'':'disabled'}`)}
   </div>
   <div class="action-group" role="group" aria-label="실행 제어">
-   ${ib('실행','run','play',`${id} ${a.run&&p.status!=='running'?'':'disabled'}`)}
-   ${ib('중지','stop','stop',`${id} ${a.run&&p.status==='running'?'':'disabled'}`)}
-   ${ib('재시작','restart','refresh',`${id} ${a.run?'':'disabled'}`)}
+   ${ib('실행','run','play',`${id} ${a.run&&!busy&&p.status!=='running'?'':'disabled'}`)}
+   ${ib('중지','stop','stop',`${id} ${a.run&&!busy&&p.status==='running'?'':'disabled'}`)}
+   ${ib('재시작','restart','refresh',`${id} ${a.run&&!busy?'':'disabled'}`)}
   </div>
   ${isAdmin()?`<div class="action-group">${ib('프로세스 권한','process-permissions','shield',id)}</div>`:''}
   ${a.remove?`<div class="action-group action-group-danger">${ib('프로세스 삭제','delete-process','trash',id)}</div>`:''}
@@ -939,7 +1018,7 @@ function processesView(){
  const user=current(),rows=filteredProcesses();state.checked=state.checked.filter(id=>rows.some(p=>p.id===id));
  if(!rows.some(p=>p.id===state.procSelected))state.procSelected=rows[0]?.id||null;
  const creating=db.processGroups.some(g=>canCreate(user,g));const selected=proc(state.procSelected);const a=selected?access(user,selected):null;
- return pageTitle('WORKSPACE','프로세스',user?'허용된 프로세스만 표시됩니다.':'공개된 프로세스의 상태를 확인합니다.',creating?button('새 프로세스','new-process','primary','plus'):'')+(!user?`<div class="readonly-strip">${icon('eye')}비로그인 · 공개 상태만 조회할 수 있습니다.<span class="spacer"></span><button class="link" data-act="login">로그인</button></div>`:user.role==='viewer'?`<div class="readonly-strip">${icon('lock')}뷰어 · 상태와 로그를 조회할 수 있습니다. 생성·편집·실행은 허용되지 않습니다.</div>`:'')+`<section class="panel"><div class="toolbar"><div class="search">${icon('search')}<input id="procSearch" aria-label="프로세스 검색" placeholder="이름 또는 그룹 검색" value="${esc(state.filter)}"></div><select id="procGroupFilter" aria-label="프로세스 그룹 필터">${option('all','모든 그룹',state.pgFilter)}${db.processGroups.filter(g=>db.processes.some(p=>p.pg===g.id&&access(user,p).view)).map(g=>option(g.id,g.name,state.pgFilter)).join('')}</select><span class="spacer"></span><span class="hint toolbar-count">${rows.length}개 표시 · ${rows.filter(p=>p.status==='running').length}개 실행 중</span></div>${processGroupDropTargets()}${state.checked.length?`<div class="bulkbar"><strong>${state.checked.length}개 선택</strong>${button('그룹 이동','bulk-move','small','folder')}${button('그룹 권한으로 복원','bulk-reset','small','branch')}<span class="spacer"></span>${button('선택 해제','clear-selection','quiet small')}</div>`:''}<div class="table-scroll"><table><thead><tr>${isAdmin()?'<th class="check"><input id="selectAllProcesses" type="checkbox" aria-label="표시된 프로세스 모두 선택"></th>':''}<th>프로세스</th><th>상태</th><th>그룹</th>${user?'<th>내 권한</th><th>실행 계정</th><th>작업</th>':''}</tr></thead><tbody>${rows.map(p=>{const v=access(user,p);return `<tr class="${state.procSelected===p.id?'selected':''}" data-process-row="${p.id}" tabindex="0">${isAdmin()?`<td class="check"><input type="checkbox" data-check-process="${p.id}" aria-label="${esc(p.name)} 선택" ${state.checked.includes(p.id)?'checked':''}></td>`:''}<td class="process-name"><div class="process-identity">${processGrip(p)}<div class="process-identity-text"><strong>${esc(p.name)} ${p.auto&&user?`<span class="accent" title="자동 시작">${icon('refresh')}</span>`:''}</strong>${user?`<small>${esc(commandForOS(p.cmd))}</small>`:''}</div></div></td><td>${statusBadge(p)}</td><td><span class="cluster" style="flex-wrap:nowrap">${icon('folder')}<span style="font-size:11px">${esc(pg(p.pg).name)}</span></span></td>${user?`<td>${badge(v.edit?'편집·실행':v.run?'실행':'조회',v.edit?'blue':'')} ${p.protected?badge('보호','amber','lock'):''}</td><td style="font:10px var(--mono)">${esc(accountForOS(p.account))}</td><td>${processActions(p,v)}</td>`:''}</tr>`;}).join('')||`<tr><td colspan="7"><div class="empty">${icon('search')}<h3>표시할 프로세스가 없습니다.</h3><p class="hint">검색 조건 또는 접근 권한을 확인하세요.</p></div></td></tr>`}</tbody></table></div><div class="table-bottom"><span>${rows.length} PROCESSES</span><span class="spacer"></span><span>LIVE · 4s</span></div></section>${selected&&a.logs?logPanel(selected):''}`;
+ return pageTitle('WORKSPACE','프로세스',user?'허용된 프로세스만 표시됩니다.':'공개된 프로세스의 상태를 확인합니다.',creating?button('새 프로세스','new-process','primary','plus'):'')+(!user?`<div class="readonly-strip">${icon('eye')}비로그인 · 공개 상태만 조회할 수 있습니다.<span class="spacer"></span><button class="link" data-act="login">로그인</button></div>`:user.role==='viewer'?`<div class="readonly-strip">${icon('lock')}뷰어 · 상태와 로그를 조회할 수 있습니다. 생성·편집·실행은 허용되지 않습니다.</div>`:'')+`<div class="process-workspace ${selected&&a.logs?'':'no-logs'}" style="--process-list-fr:${logDockRatio}fr;--process-log-fr:${1-logDockRatio}fr"><section class="panel process-list-panel"><div class="toolbar"><div class="search">${icon('search')}<input id="procSearch" aria-label="프로세스 검색" placeholder="이름 또는 그룹 검색" value="${esc(state.filter)}"></div><select id="procGroupFilter" aria-label="프로세스 그룹 필터">${option('all','모든 그룹',state.pgFilter)}${db.processGroups.filter(g=>db.processes.some(p=>p.pg===g.id&&access(user,p).view)).map(g=>option(g.id,g.name,state.pgFilter)).join('')}</select><span class="spacer"></span><span class="hint toolbar-count">${rows.length}개 표시 · ${rows.filter(p=>p.status==='running').length}개 실행 중</span></div>${processGroupDropTargets()}${state.checked.length?`<div class="bulkbar"><strong>${state.checked.length}개 선택</strong>${button('그룹 이동','bulk-move','small','folder')}${button('그룹 권한으로 복원','bulk-reset','small','branch')}<span class="spacer"></span>${button('선택 해제','clear-selection','quiet small')}</div>`:''}<div class="table-scroll"><table><thead><tr>${isAdmin()?'<th class="check"><input id="selectAllProcesses" type="checkbox" aria-label="표시된 프로세스 모두 선택"></th>':''}<th>프로세스</th><th>상태</th><th>그룹</th>${user?'<th>내 권한</th><th>실행 계정</th><th>작업</th>':''}</tr></thead><tbody>${rows.map(p=>{const v=access(user,p);return `<tr class="${state.procSelected===p.id?'selected':''}" data-process-row="${p.id}" tabindex="0">${isAdmin()?`<td class="check"><input type="checkbox" data-check-process="${p.id}" aria-label="${esc(p.name)} 선택" ${state.checked.includes(p.id)?'checked':''}></td>`:''}<td class="process-name"><div class="process-identity">${processGrip(p)}<div class="process-identity-text"><strong>${esc(p.name)} ${p.auto&&user?`<span class="accent" title="자동 시작">${icon('refresh')}</span>`:''}</strong>${user?`<small>${esc(commandForOS(p.cmd))}</small>`:''}</div></div></td><td>${statusBadge(p)}${processActionFeedback(p)}</td><td><span class="cluster" style="flex-wrap:nowrap">${icon('folder')}<span style="font-size:11px">${esc(pg(p.pg).name)}</span></span></td>${user?`<td>${badge(v.edit?'편집·실행':v.run?'실행':'조회',v.edit?'blue':'')} ${p.protected?badge('보호','amber','lock'):''}</td><td style="font:10px var(--mono)">${esc(accountForOS(p.account))}</td><td>${processActions(p,v)}</td>`:''}</tr>`;}).join('')||`<tr><td colspan="7"><div class="empty">${icon('search')}<h3>표시할 프로세스가 없습니다.</h3><p class="hint">검색 조건 또는 접근 권한을 확인하세요.</p></div></td></tr>`}</tbody></table></div><div class="table-bottom"><span>${rows.length} PROCESSES</span><span class="spacer"></span><span>LIVE · 4s</span></div></section>${selected&&a.logs?processDockDivider()+logPanel(selected):''}</div>`;
 }
 function commandForOS(s){return s;}
 function pathForOS(s){return s;}
@@ -1150,6 +1229,43 @@ document.addEventListener('keydown',async e=>{
  if(!target||processOrderBusy)return;
  await persistProcessOrder(grip.dataset.dragProcess,target.id,e.key==='ArrowDown');
  document.querySelectorAll('[data-drag-process]').forEach(el=>{if(el.dataset.dragProcess===grip.dataset.dragProcess)el.focus();});
+});
+
+// The splitter is independent of process row drag-and-drop.
+document.addEventListener('pointerdown',e=>{
+ const handle=e.target.closest?.('[data-process-splitter]');
+ if(!handle||e.button!==0)return;
+ const dock=handle.closest('.process-workspace');if(!dock)return;
+ const rect=dock.getBoundingClientRect();
+ logDockDrag={pointer:e.pointerId,top:rect.top,available:Math.max(1,dock.clientHeight-handle.offsetHeight)};
+ handle.classList.add('dragging');
+ e.preventDefault();
+});
+window.addEventListener('pointermove',e=>{
+ if(!logDockDrag||e.pointerId!==logDockDrag.pointer)return;
+ setLogDockRatio((e.clientY-logDockDrag.top)/logDockDrag.available);
+});
+function finishLogDockDrag(){
+ if(!logDockDrag)return;
+ logDockDrag=null;
+ document.querySelector('[data-process-splitter]')?.classList.remove('dragging');
+ setLogDockRatio(logDockRatio,true);
+}
+window.addEventListener('pointerup',e=>{if(logDockDrag?.pointer===e.pointerId)finishLogDockDrag();});
+window.addEventListener('pointercancel',e=>{if(logDockDrag?.pointer===e.pointerId)finishLogDockDrag();});
+window.addEventListener('blur',finishLogDockDrag);
+document.addEventListener('dblclick',e=>{
+ if(!e.target.closest?.('[data-process-splitter]'))return;
+ setLogDockRatio(0.58,true);
+});
+document.addEventListener('keydown',e=>{
+ if(!e.target.matches?.('[data-process-splitter]'))return;
+ const step=e.shiftKey?0.10:0.04;
+ if(e.key==='ArrowUp')setLogDockRatio(logDockRatio-step,true);
+ else if(e.key==='ArrowDown')setLogDockRatio(logDockRatio+step,true);
+ else if(e.key==='Home')setLogDockRatio(0.58,true);
+ else return;
+ e.preventDefault();
 });
 const adminActs=new Set(['add-user','edit-user','delete-user','add-user-group','edit-user-group','delete-user-group','add-process-group','edit-process-group','delete-process-group','group-permissions','process-permissions','add-acl','reset-policy','preview-policy','bulk-move','bulk-reset','clear-selection','add-token','revoke-token','export-audit','audit-detail']);
 document.addEventListener('click',async e=>{
