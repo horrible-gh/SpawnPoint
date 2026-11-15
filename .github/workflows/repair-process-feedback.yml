@@ -9,6 +9,8 @@ on:
       - internal/webui/process_feedback_test.go
 permissions:
   contents: write
+env:
+  TZ: Asia/Tokyo
 jobs:
   validate:
     runs-on: ubuntu-latest
