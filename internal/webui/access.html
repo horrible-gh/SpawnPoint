@@ -618,9 +618,7 @@ const I18N = {
  '실행 실패':['Run failed','起動失敗'],
  '중지 실패':['Stop failed','停止失敗'],
  '재시작 실패':['Restart failed','再起動失敗'],
- '실행 확인 필요':['Check run status','起動状態を確認'],
- '중지 확인 필요':['Check stop status','停止状態を確認'],
- '재시작 확인 필요':['Check restart status','再起動状態を確認'],
+ '상태 확인 중':['Checking status…','状態確認中'],
  '프로세스 목록과 로그 높이 조절':['Resize process list and logs','プロセス一覧とログの高さ調整'],
  '위아래 드래그 · 더블클릭: 기본 높이':['Drag to resize · double-click to reset','ドラッグで調整・ダブルクリックでリセット'],
 };
@@ -736,8 +734,16 @@ const processFeedback=new Map();
 function processActionFeedback(p){
  const feedback=processFeedback.get(p.id);
  if(!feedback)return '';
- const suffix=feedback.status==='pending'?' 요청 중':feedback.status==='unknown'?' 확인 필요':' 실패';
- return '<span class="process-action-feedback">'+badge(feedback.label+suffix,feedback.status==='pending'?'blue':'amber')+'</span>';
+ const text=feedback.status==='unknown'?'상태 확인 중':feedback.label+(feedback.status==='pending'?' 요청 중':' 실패');
+ return '<span class="process-action-feedback">'+badge(text,feedback.status==='error'?'amber':'blue')+'</span>';
+}
+function reconcileProcessFeedback(snapshot){
+ // A fresh state read resolves uncertainty, not the outcome of a lost command.
+ // Keep confirmed errors and in-flight actions. An older read must not clear
+ // feedback created or replaced after that read started.
+ for(const [id,feedback] of snapshot){
+  if(feedback.status==='unknown'&&processFeedback.get(id)===feedback)processFeedback.delete(id);
+ }
 }
 function setLogDockRatio(next,persist=false){
  const dock=document.querySelector('.process-workspace'),handle=document.querySelector('[data-process-splitter]');
@@ -774,11 +780,13 @@ async function request(path,body,method){
 }
 async function loadIdentity(){const data=await request('/auth/me');app.csrf=data.csrf||'';app.runtime=data.runtime;app.setup=data.setup_required;db.settings=data.settings;state.os=data.runtime.os;state.transport=data.runtime.https?'https':data.runtime.secure?'local':'http';state.actor=data.user?.id||null;if(data.user)db.users=[data.user];if(!db.settings.osLogin||!app.runtime.os_login_available)state.loginMode='local';return data;}
 async function loadState(){
+ const feedbackSnapshot=new Map(processFeedback);
  const data=await request('/api/access/state');app.revision=data.revision;db=data.db;state.actor=data.actor||null;
  if(!db.processGroups.some(g=>g.id===state.policyGroup)){state.policyGroup=db.processGroups[0]?.id||'';state.policyTarget='group';state.policyDraft=null;state.policyDirty=false;}
  if(state.policyTarget!=='group'&&!db.processes.some(p=>p.id===state.policyTarget)){state.policyTarget='group';state.policyDraft=null;state.policyDirty=false;}
  if(!db.users.some(u=>u.id===state.effectiveUser))state.effectiveUser=db.users[0]?.id||'';
  if(!db.processGroups.some(g=>g.id===state.pgFilter))state.pgFilter='all';
+ reconcileProcessFeedback(feedbackSnapshot);
 }
 async function refresh(){const identity=await loadIdentity();if(identity.user||db.settings.guest)await loadState();else{db.processes=[];db.users=[];db.processGroups=[];db.userGroups=[];state.route="/login";}render();}
 async function boot(){
@@ -850,14 +858,23 @@ async function processAction(action,id){
   render();
   try{
    const result=await request('/processes/'+encodeURIComponent(id)+'/'+action,{});
-   await refresh();
    if(result.process?.status==='failed')throw new Error(result.process.error||'프로세스를 실행하지 못했습니다.');
+  }catch(error){
+   processFeedback.set(id,{label,status:error.network?'unknown':'error'});
+   render();
+   handleError(error);
+   return;
+  }
+  try{
+   await refresh();
    processFeedback.delete(id);
    render();
    void pollLog(true);
    toast(label+' 요청을 처리했습니다.');
   }catch(error){
-   processFeedback.set(id,{label,status:error.network?'unknown':'error'});
+   // The command was acknowledged. A failed read must not turn that into a
+   // command failure or cause a replay; background state reads reconcile it.
+   processFeedback.set(id,{label,status:'unknown'});
    render();
    handleError(error);
   }
