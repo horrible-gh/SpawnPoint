@@ -416,6 +416,36 @@ with tempfile.TemporaryDirectory(prefix='spawnpoint-browser-') as work:
             with (root / 'logs' / 'Browser Worker edited.log').open('ab') as f:
                 f.write(('\n'.join('historical log line '+str(i) for i in range(180))+'\n').encode())
             page.evaluate("""async() => { await pollLog(true); }""")
+            # Background re-renders must preserve the process list viewport.
+            # Add UI-only rows to create vertical overflow without modifying the database.
+            list_scroll=page.evaluate("""() => {
+                const original=db.processes;
+                const seed=original.find(p=>p.id===state.procSelected);
+                try {
+                    db.processes=original.concat(Array.from({length:45},(_,i)=>({
+                        ...seed,id:'scroll-fixture-'+i,name:'Scroll fixture '+i
+                    })));
+                    render(true);
+                    const list=document.querySelector('.process-list-panel>.table-scroll');
+                    list.scrollTop=160;
+                    list.scrollLeft=60;
+                    const before={top:list.scrollTop,left:list.scrollLeft,
+                        overflowing:list.scrollHeight>list.clientHeight};
+                    render(true);
+                    const after=document.querySelector('.process-list-panel>.table-scroll');
+                    return {before,after:{top:after.scrollTop,left:after.scrollLeft}};
+                } finally {
+                    db.processes=original;
+                    render(true);
+                }
+            }""")
+            check(list_scroll['before']['overflowing'] and list_scroll['before']['top']>40,
+                  'process list regression fixture has vertical overflow')
+            check(abs(list_scroll['after']['top']-list_scroll['before']['top'])<=1,
+                  'process list vertical scroll survives a background re-render')
+            if list_scroll['before']['left']>0:
+                check(abs(list_scroll['after']['left']-list_scroll['before']['left'])<=1,
+                      'process list horizontal scroll survives a background re-render')
             # A 4-second status refresh must not recreate or scroll the live log.
             page.locator('[data-act="logs-toggle"]').click()
             expect(page.locator('[data-act="logs-toggle"]')).to_contain_text('더 읽기')

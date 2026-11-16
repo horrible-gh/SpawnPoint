@@ -934,6 +934,10 @@ function render(preserveLog=false){
  // Background status refreshes must preserve the log viewport in place.
  const existingLog=preserveLog?$('#root .log-panel'):null;
  const existingLogScroll=existingLog?.querySelector('#liveLog')?.scrollTop??0;
+ // A full render replaces the list scroller, even when only status changed.
+ const oldList=state.route==='/processes'?$('#root .process-list-panel>.table-scroll'):null;
+ const listScroll=oldList?{top:oldList.scrollTop,left:oldList.scrollLeft}:null;
+ const pageScroll=preserveLog?{top:window.scrollY,left:window.scrollX}:null;
  if(state.route.startsWith('/admin')&&!isAdmin())state.route='/processes';
  renderRail();
  if(state.route==='/login'){$('#root').innerHTML=renderLogin();localizeAll();return;}
@@ -949,6 +953,11 @@ function render(preserveLog=false){
   }
  }
  localizeAll();
+ if(listScroll&&state.route==='/processes'){
+  const list=$('#root .process-list-panel>.table-scroll');
+  if(list){list.scrollTop=listScroll.top;list.scrollLeft=listScroll.left;}
+ }
+ if(pageScroll&&state.route==='/processes')window.scrollTo(pageScroll.left,pageScroll.top);
 }
 function brand(){return `<div class="brand"><div class="icon-box">${icon('terminal')}</div><div><div class="brand-name">Spawn<b>Point</b></div><div class="eyebrow">PROCESS CONTROL</div></div></div>`;}
 function nav(route,label,i){return `<button class="nav-item ${state.route===route?'active':''}" data-nav="${route}" ${state.route===route?'aria-current="page"':''}>${icon(i)}${label}</button>`;}
