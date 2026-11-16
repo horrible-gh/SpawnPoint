@@ -260,3 +260,60 @@ test('automatic reconnection clears feedback only after the process state is fet
   assert.equal(h.renders(), 1);
   assert.ok(h.calls.every(c => c.body === undefined));
 });
+
+test('offline reconnection is not blocked by a focused input', async () => {
+  const h = harness(() => stateResponse('stopped'));
+  h.ctx.connection.offline = true;
+  h.ctx.document.activeElement = {matches: () => true};
+  await h.ctx.refreshBackground();
+  assert.equal(h.ctx.connection.offline, false);
+  assert.equal(h.ctx.db.processes[0].status, 'stopped');
+  assert.equal(h.renders(), 0, 'recovery must not discard the active editor');
+  assert.equal(h.calls.length, 1);
+  h.ctx.document.activeElement = null;
+  await h.ctx.refreshBackground();
+  assert.equal(h.renders(), 1, 'normal rendering resumes after editing');
+});
+
+test('offline reconnection is not blocked by an open modal', async () => {
+  const h = harness(() => stateResponse('stopped'));
+  h.ctx.connection.offline = true;
+  h.ctx.$ = selector => ({open: selector === '#modal'});
+  await h.ctx.refreshBackground();
+  assert.equal(h.ctx.connection.offline, false);
+  assert.equal(h.renders(), 0, 'the open modal must not be replaced');
+  assert.equal(h.ctx.db.processes[0].status, 'stopped');
+});
+
+test('manual connection recovery ignores the retry backoff', async () => {
+  const h = harness(() => stateResponse('stopped'));
+  h.ctx.connection.offline = true;
+  h.ctx.connection.retryAt = Date.now() + 60_000;
+  await h.ctx.refreshBackground(true);
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.ctx.connection.offline, false);
+});
+
+test('reconnect backoff stays under twelve seconds after repeated failures', async () => {
+  const h = harness(() => {throw networkError();});
+  h.ctx.connection.offline = true;
+  h.ctx.connection.retries = 5;
+  const start = Date.now();
+  await h.ctx.refreshBackground(true);
+  assert.equal(h.ctx.connection.offline, true);
+  assert.ok(h.ctx.connection.retryAt >= start + 11_900);
+  assert.ok(h.ctx.connection.retryAt <= Date.now() + 12_100);
+});
+
+test('process commands are not sent while offline', async () => {
+  const h = harness();
+  h.ctx.connection.offline = true;
+  await h.action('restart');
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.feedback.size, 0);
+});
+
+test('connection status offers an explicit retry without refreshing the page', () => {
+  assert.match(html, /data-act="retry-connection"/);
+  assert.match(html, /case 'retry-connection':connection\.retryAt=0;await refreshBackground\(true\)/);
+});
