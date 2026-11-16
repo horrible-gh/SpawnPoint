@@ -795,9 +795,10 @@ async function request(path,body,method){
   noteConnectionFailure(path,'HTTP '+response.status);
   throw error;
  }
- if(!connection.recovering)noteConnectionSuccess();
  let data;try{data=await response.json();}catch{throw new Error('서버 응답을 읽지 못했습니다.');}
  if(!response.ok||data.ok===false){const error=new Error(data.error?.message||`HTTP ${response.status}`);error.code=data.error?.code;error.status=response.status;throw error;}
+ // A successful log or identity response alone is not process-state recovery.
+ if(!connection.recovering&&path==='/api/access/state')noteConnectionSuccess();
  return data;
 }
 async function loadIdentity(){const data=await request('/auth/me');app.csrf=data.csrf||'';app.runtime=data.runtime;app.setup=data.setup_required;db.settings=data.settings;state.os=data.runtime.os;state.transport=data.runtime.https?'https':data.runtime.secure?'local':'http';state.actor=data.user?.id||null;if(data.user)db.users=[data.user];if(!db.settings.osLogin||!app.runtime.os_login_available)state.loginMode='local';return data;}
