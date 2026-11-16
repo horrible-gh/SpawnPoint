@@ -716,12 +716,19 @@ function updateConnectionStatus(){
  if(connection.offline)el.title='서버 연결 복구를 자동으로 시도합니다.';
  else el.removeAttribute('title');
 }
+function syncProcessControls(){
+ document.querySelectorAll('[data-act="run"],[data-act="stop"],[data-act="restart"]').forEach(b=>{
+  const p=db.processes.find(p=>p.id===b.dataset.id);
+  const allowed=!!p&&!connection.offline&&access(current(),p).run&&processFeedback.get(p.id)?.status!=='pending';
+  b.disabled=!allowed||(b.dataset.act==='run'&&p.status==='running')||(b.dataset.act==='stop'&&p.status!=='running');
+ });
+}
 function noteConnectionFailure(path,cause){
  if(connection.offline)return;
  connection.offline=true;
  updateConnectionStatus();
- // Process controls must not look actionable while the server is unreachable.
- document.querySelectorAll('[data-act="run"],[data-act="stop"],[data-act="restart"]').forEach(b=>b.disabled=true);
+ // Keep process actions consistent with the connection state.
+ syncProcessControls();
  console.warn('[SpawnPoint] 서버에 연결할 수 없습니다:',path,cause);
  if(app.ready)toast('서버 연결 끊김 · 재연결 중','error');
 }
@@ -729,6 +736,7 @@ function noteConnectionSuccess(){
  if(!connection.offline)return;
  connection.offline=false;connection.retries=0;connection.retryAt=0;
  updateConnectionStatus();
+ syncProcessControls();
  if(app.ready)toast('서버 연결 복구');
 }
 
