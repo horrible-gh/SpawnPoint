@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const {readFileSync} = require('node:fs');
 const {join} = require('node:path');
 const {test} = require('node:test');
-const {Script, createContext, runInContext} = require('node:vm');
+const {createContext, runInContext} = require('node:vm');
 
 const html = readFileSync(join(__dirname, 'access.html'), 'utf8');
 const start = html.indexOf('async function request(path,body,method){');
@@ -70,13 +70,20 @@ test('a stalled identity GET is abortable too', async () => {
   assert.equal(h.failures.length, 1);
 });
 
-test('a stalled response body does not hold the background refresh lock', async () => {
+test('a stalled response body is cancelled by the read deadline', async () => {
+  let entered;
+  const bodyStarted = new Promise(resolve => {entered = resolve;});
   const h = harness((_path, options) => Promise.resolve({
     status: 200, ok: true,
-    json: () => new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('body aborted')))),
+    json: () => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new Error('body aborted')));
+      entered();
+    }),
   }));
   const pending = h.request('/api/access/state');
-  await Promise.resolve();
+  // The VM has a separate Promise realm: a single microtask yield does not
+  // guarantee json() has installed its abort listener. Wait for that event.
+  await bodyStarted;
   h.timeout();
   await assert.rejects(pending, error => error.network && error.path === '/api/access/state');
   assert.equal(h.failures.length, 1);
