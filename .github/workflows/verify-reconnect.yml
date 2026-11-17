@@ -1,0 +1,60 @@
+name: Verify browser reconnection
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/webui/**'
+      - 'internal/access/**'
+      - 'tools/test-reconnect-browser.cjs'
+      - '.github/workflows/verify-reconnect.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'internal/webui/**'
+      - 'internal/access/**'
+      - 'tools/test-reconnect-browser.cjs'
+      - '.github/workflows/verify-reconnect.yml'
+permissions:
+  contents: read
+jobs:
+  reconnect:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build the actual server
+        shell: bash
+        run: go build -o reconnect-server.exe ./cmd/spawnpoint
+      - name: Install browser test dependency
+        shell: bash
+        run: |
+          npm install --prefix "$RUNNER_TEMP/spawnpoint-reconnect" playwright
+          if [ "$RUNNER_OS" = Linux ]; then
+            "$RUNNER_TEMP/spawnpoint-reconnect/node_modules/.bin/playwright" install --with-deps chromium
+          else
+            "$RUNNER_TEMP/spawnpoint-reconnect/node_modules/.bin/playwright" install chromium
+          fi
+      - name: Verify restart and network recovery without page reload
+        shell: bash
+        run: NODE_PATH="$RUNNER_TEMP/spawnpoint-reconnect/node_modules" node tools/test-reconnect-browser.cjs ./reconnect-server.exe
+      - name: Publish exact UI and verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spawnpoint-reconnect-${{ matrix.os }}
+          path: artifacts/reconnect-*
+          if-no-files-found: ignore
+          retention-days: 7
