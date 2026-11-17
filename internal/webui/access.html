@@ -781,21 +781,40 @@ async function request(path,body,method){
  const options={method:method||(body===undefined?'GET':'POST'),credentials:'same-origin',headers:{}};
  if(body!==undefined){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}
  if(options.method!=='GET'&&app.csrf)options.headers['X-CSRF-Token']=app.csrf;
- let response;
- try{response=await fetch(path,options);}
- catch(cause){
-  const error=new Error('서버에 연결할 수 없습니다.');
-  error.network=true;error.path=path;
-  noteConnectionFailure(path,cause);
-  throw error;
+ // A stalled GET can otherwise hold refreshBackground()'s single-flight lock
+ // forever. Only reads get a deadline; run/stop/restart POSTs are not replayed
+ // or cut short because their result may be ambiguous after a disconnect.
+ const controller=options.method==='GET'?new AbortController():null;
+ if(controller){options.signal=controller.signal;options.cache='no-store';}
+ const timeout=controller?setTimeout(()=>controller.abort(),10000):null;
+ let response,data;
+ try{
+  try{response=await fetch(path,options);}
+  catch(cause){
+   const error=new Error('서버에 연결할 수 없습니다.');
+   error.network=true;error.path=path;
+   noteConnectionFailure(path,cause);
+   throw error;
+  }
+  if([502,503,504].includes(response.status)){
+   const error=new Error('서버에 연결할 수 없습니다.');
+   error.network=true;error.path=path;
+   noteConnectionFailure(path,'HTTP '+response.status);
+   throw error;
+  }
+  try{data=await response.json();}
+  catch(cause){
+   if(controller?.signal.aborted){
+    const error=new Error('서버에 연결할 수 없습니다.');
+    error.network=true;error.path=path;
+    noteConnectionFailure(path,cause);
+    throw error;
+   }
+   throw new Error('서버 응답을 읽지 못했습니다.');
+  }
+ }finally{
+  if(timeout!==null)clearTimeout(timeout);
  }
- if([502,503,504].includes(response.status)){
-  const error=new Error('서버에 연결할 수 없습니다.');
-  error.network=true;error.path=path;
-  noteConnectionFailure(path,'HTTP '+response.status);
-  throw error;
- }
- let data;try{data=await response.json();}catch{throw new Error('서버 응답을 읽지 못했습니다.');}
  if(!response.ok||data.ok===false){const error=new Error(data.error?.message||`HTTP ${response.status}`);error.code=data.error?.code;error.status=response.status;throw error;}
  // A successful log or identity response alone is not process-state recovery.
  if(!connection.recovering&&path==='/api/access/state')noteConnectionSuccess();
