@@ -973,9 +973,10 @@ function navigate(route,force=false){
  state.route=route;history.replaceState(null,'','#'+route);closeMenu();render();window.scrollTo(0,0);
 }
 function render(preserveLog=false){
- // Background status refreshes must preserve the log viewport in place.
+ // Preserve only the log viewport. The header must reflect current feedback.
  const existingLog=preserveLog?$('#root .log-panel'):null;
- const existingLogScroll=existingLog?.querySelector('#liveLog')?.scrollTop??0;
+ const existingLogBody=existingLog?.querySelector('#liveLog');
+ const existingLogScroll=existingLogBody?.scrollTop??0;
  // A full render replaces the list scroller, even when only status changed.
  const oldList=state.route==='/processes'?$('#root .process-list-panel>.table-scroll'):null;
  const listScroll=oldList?{top:oldList.scrollTop,left:oldList.scrollLeft}:null;
@@ -989,9 +990,11 @@ function render(preserveLog=false){
  if(existingLog&&state.route==='/processes'){
   const replacement=$('#root .log-panel');
   if(replacement&&replacement.dataset.processId===existingLog.dataset.processId){
-   replacement.replaceWith(existingLog);
-   const scroller=existingLog.querySelector('#liveLog');
-   if(scroller)scroller.scrollTop=existingLogScroll;
+   const replacementBody=replacement.querySelector('#liveLog');
+   if(existingLogBody&&replacementBody){
+    replacementBody.replaceWith(existingLogBody);
+    existingLogBody.scrollTop=existingLogScroll;
+   }
   }
  }
  localizeAll();
@@ -1490,14 +1493,19 @@ let refreshing=false;
 async function refreshBackground(reenter=false){
  const editing=$('#modal').open||$('#confirm').open||$('#processMoveDialog').open||
     processOrderBusy||processDragId||document.activeElement?.matches('input,select,textarea');
- // The UI must not block reconnection. Defer rendering while the user edits.
+ // Editing defers rendering, never the connection probe. A paused log must
+ // not hide a dead connection merely because an input or dialog has focus.
  if(!app.ready||refreshing||document.hidden||
-    (!reenter&&!connection.offline&&state.route!=='/processes')||
-    (!connection.offline&&editing))return;
+    (!reenter&&!connection.offline&&state.route!=='/processes'))return;
  if(!reenter&&connection.offline&&Date.now()<connection.retryAt)return;
  refreshing=true;
  connection.recovering=reenter||connection.offline;
  try{
+  if(editing&&!connection.recovering){
+   // Probe without replacing the editor's data/revision or optimistic locks.
+   await request('/api/access/state');
+   return;
+  }
   if(reenter||connection.offline){
    // Re-entering a sleeping tab checks the cookie and renews remembered
    // credentials; failed fetches must not be mistaken for logout.

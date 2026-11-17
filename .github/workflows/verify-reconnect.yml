@@ -6,7 +6,13 @@ on:
       - 'internal/webui/**'
       - 'internal/access/**'
       - 'tools/test-reconnect-browser.cjs'
-      - 'tools/prepare-reconnect-candidate.cjs'
+      - '.github/workflows/verify-reconnect.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'internal/webui/**'
+      - 'internal/access/**'
+      - 'tools/test-reconnect-browser.cjs'
       - '.github/workflows/verify-reconnect.yml'
 permissions:
   contents: read
@@ -18,8 +24,6 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,9 +35,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Prepare exact reconnect candidate
-        shell: bash
-        run: node tools/prepare-reconnect-candidate.cjs
       - name: Build the actual server and run focused regressions
         shell: bash
         run: |
@@ -52,21 +53,6 @@ jobs:
       - name: Verify restart and network recovery without page reload
         shell: bash
         run: NODE_PATH="$RUNNER_TEMP/spawnpoint-reconnect/node_modules" node tools/test-reconnect-browser.cjs ./reconnect-server.exe
-      - name: Store verified candidate blobs without moving any branch
-        if: success() && runner.os == 'Linux' && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const crypto = require('crypto');
-            const candidates = [];
-            for (const path of ['internal/webui/access.html', 'tools/test-reconnect-browser.cjs']) {
-              const bytes = fs.readFileSync(path);
-              const {data} = await github.rest.git.createBlob({...context.repo, content: bytes.toString('base64'), encoding: 'base64'});
-              candidates.push({path, sha: data.sha, sha256: crypto.createHash('sha256').update(bytes).digest('hex')});
-            }
-            fs.writeFileSync('artifacts/reconnect-candidate.json', JSON.stringify({base: context.sha, files: candidates}, null, 2));
-            core.info(JSON.stringify(candidates));
       - name: Publish exact UI and verification evidence
         if: always()
         uses: actions/upload-artifact@v4

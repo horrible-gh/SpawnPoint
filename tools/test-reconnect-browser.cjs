@@ -97,8 +97,10 @@ const listen=server=>new Promise((resolve,reject)=>{server.once('error',reject);
    assert.equal(await page.locator('[data-act="run"]').first().isEnabled(),true);
   });
   await scenario('open editor does not suppress disconnection detection when logs are paused',async()=>{
-   await page.evaluate(()=>{logState.paused=true;});
    await page.locator('[data-act="new-process"]').click();await page.locator('#processName').fill('unsaved reconnect draft');
+   await page.waitForFunction(()=>!logBusy&&!refreshing);
+   await page.evaluate(async()=>{await pollLog(true);logState.paused=true;});
+   assert.equal(await page.evaluate(()=>logState.paused&&logState.id===state.procSelected),true);
    mode='unavailable';await offline();recoverProxy();await recovered();
    assert.equal(await page.locator('#processName').inputValue(),'unsaved reconnect draft');
    assert.equal(await page.locator('#modal').evaluate(node=>node.open),true);
@@ -110,11 +112,31 @@ const listen=server=>new Promise((resolve,reject)=>{server.once('error',reject);
   });
   await scenario('real server stop/start keeps the same browser page and remembered login',async()=>{
    const token=await page.evaluate(()=>{window.__reconnectPageToken=Math.random();return window.__reconnectPageToken;});
-   const readsBefore=logReads;
-   await stop();await offline();await start();await recovered();
-   assert.equal(await page.evaluate(()=>window.__reconnectPageToken),token,'must not reload the page');
-   await page.waitForTimeout(2000);assert.ok(logReads>readsBefore,'log polling resumes');
+   for(let cycle=0;cycle<3;cycle++){
+    const readsBefore=logReads;
+    await stop();await offline();await start();await recovered();
+    assert.equal(await page.evaluate(()=>window.__reconnectPageToken),token,'must not reload the page');
+    await page.waitForTimeout(2000);assert.ok(logReads>readsBefore,'log polling resumes');
+   }
    assert.equal(await page.locator('[data-act="new-process"]').count(),1,'remembered login survives restart');
+  });
+  await scenario('browser network offline/online recovers without reload',async()=>{
+   const token=await page.evaluate(()=>{window.__networkPageToken=Math.random();return window.__networkPageToken;});
+   await page.context().setOffline(true);
+   try{await offline();}finally{await page.context().setOffline(false);}
+   await recovered();
+   assert.equal(await page.evaluate(()=>window.__networkPageToken),token);
+   assert.equal(await page.locator('[data-act="run"]').first().isEnabled(),true);
+  });
+  await scenario('healthy editor probe preserves its database revision and unsaved input',async()=>{
+   await page.locator('[data-act="new-process"]').click();await page.locator('#processName').fill('stable draft');
+   await page.waitForFunction(()=>!refreshing&&!logBusy);
+   const snapshot=await page.evaluate(()=>{window.__editorDB=db;return {revision:app.revision,actor:state.actor};});
+   await page.evaluate(()=>refreshBackground());
+   assert.equal(await page.evaluate(()=>db===window.__editorDB),true);
+   assert.equal(await page.evaluate(()=>app.revision),snapshot.revision);
+   assert.equal(await page.locator('#processName').inputValue(),'stable draft');
+   await page.evaluate(()=>closeModal(true));
   });
   assert.deepEqual(report.pageErrors,[],'uncaught browser errors');
  }catch(error){report.fatal=String(error);console.error(error);}
